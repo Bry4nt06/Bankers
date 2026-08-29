@@ -73,13 +73,51 @@ local function stabilizeScene()
 	end
 end
 
+local function getMenuReplicationFocus(): BasePart?
+	local endMarker = workspace:FindFirstChild(END_MARKER_NAME)
+	if endMarker and endMarker:IsA("BasePart") then
+		return endMarker
+	end
+
+	local startMarker = workspace:FindFirstChild(START_MARKER_NAME)
+	if startMarker and startMarker:IsA("BasePart") then
+		return startMarker
+	end
+
+	return nil
+end
+
+local function pinReplicationFocus(player: Player)
+	local focus = getMenuReplicationFocus()
+	if not focus then
+		warn(string.format("[BankersMenu] no menu replication focus available for %s", player.Name))
+		return
+	end
+
+	player.ReplicationFocus = focus
+	print(string.format(
+		"[BankersMenu] replication focus pinned to %s for %s",
+		focus.Name,
+		player.Name
+	))
+end
+
+local function refreshReplicationFocusForAllPlayers()
+	for _, player in Players:GetPlayers() do
+		pinReplicationFocus(player)
+	end
+end
+
 local function keepPlayerOutOfScene(player: Player)
 	if player.Character then
 		player.Character:Destroy()
 	end
+
 	player.CharacterAdded:Connect(function(character)
 		character:Destroy()
 	end)
+
+	task.defer(pinReplicationFocus, player)
 end
 
 local function publishCameraConfig()
@@ -122,6 +160,7 @@ local function publishCameraConfig()
 	end
 
 	folder:SetAttribute("Ready", startReady and endReady)
+	refreshReplicationFocusForAllPlayers()
 	print("[BankersMenu] camera CFrames published to ReplicatedStorage")
 end
 
@@ -138,7 +177,10 @@ task.delay(1, function()
 	publishCameraConfig()
 end)
 
-task.delay(3, stabilizeScene)
+task.delay(3, function()
+	stabilizeScene()
+	refreshReplicationFocusForAllPlayers()
+end)
 
 workspace.DescendantAdded:Connect(function(descendant)
 	if descendant:IsA("Model") and descendant.Name == "Rig" then
