@@ -1,26 +1,33 @@
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local removedSounds = 0
+local silencedSounds = 0
 
-local function removeSound(instance: Instance)
-	if instance:IsA("Sound") then
-		removedSounds += 1
-		instance:Destroy()
+local function silenceSound(instance: Instance)
+	if not instance:IsA("Sound") then
+		return
 	end
+
+	pcall(function()
+		instance:Stop()
+	end)
+	instance.SoundId = ""
+	instance.Volume = 0
+	instance.Looped = false
+	silencedSounds += 1
 end
 
--- Audio is intentionally stripped for the current cleanup pass. We can add
--- owned/authorized THE TAKE audio back later after the gameplay foundation is
--- stable and the Output is clean.
+-- Audio is intentionally muted for the current cleanup pass. We keep the Sound
+-- instances themselves so donor weapon scripts that call Sound:Play() do not
+-- lose their expected object references.
 for _, descendant in ipairs(game:GetDescendants()) do
-	removeSound(descendant)
+	silenceSound(descendant)
 end
 
 game.DescendantAdded:Connect(function(descendant)
 	if descendant:IsA("Sound") then
 		task.defer(function()
 			if descendant.Parent then
-				descendant:Destroy()
+				silenceSound(descendant)
 			end
 		end)
 	end
@@ -41,4 +48,4 @@ if main then
 	end
 end
 
-print(string.format("[TheTakeCleanup] donor audio stripped for cleanup pass (%d sounds removed)", removedSounds))
+print(string.format("[TheTakeCleanup] donor audio muted for cleanup pass (%d sounds silenced)", silencedSounds))
