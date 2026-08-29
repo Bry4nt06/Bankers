@@ -23,6 +23,13 @@ local function setCoreGuiEnabled(enabled: boolean)
 end
 
 local function setControlsEnabled(enabled: boolean)
+	-- Broken deliberately delays character spawning until PLAY. Calling the
+	-- default controls module before a character exists causes Player:Move
+	-- warnings in Studio and is unnecessary.
+	if not player.Character then
+		return
+	end
+
 	local playerScripts = player:FindFirstChild("PlayerScripts")
 	if not playerScripts then
 		return
