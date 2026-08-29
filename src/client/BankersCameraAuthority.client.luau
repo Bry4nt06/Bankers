@@ -1,3 +1,4 @@
+local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -12,15 +13,14 @@ local BIND_NAME = "BankersCameraAuthority"
 local POSITION_EPSILON = 0.001
 local LOOK_EPSILON = 0.0001
 
--- Menu micro-parallax: the final hero shot stays still until the mouse moves.
--- These offsets are intentionally small so the menu feels responsive rather
--- than behaving like a free-look gameplay camera.
-local PARALLAX_X_STUDS = 0.32
-local PARALLAX_Y_STUDS = 0.16
-local PARALLAX_YAW_DEGREES = 0.85
-local PARALLAX_PITCH_DEGREES = 0.42
-local POINTER_DEADZONE = 0.025
-local POINTER_RESPONSE = 7.0
+-- Test-strength menu micro-parallax. Once the mouse response is confirmed in
+-- Studio, these can be reduced to a subtler final value without changing the
+-- camera architecture.
+local PARALLAX_X_STUDS = 1.10
+local PARALLAX_Y_STUDS = 0.55
+local PARALLAX_YAW_DEGREES = 2.50
+local PARALLAX_PITCH_DEGREES = 1.25
+local POINTER_RESPONSE = 8.0
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -80,6 +80,7 @@ local overrideCorrections = 0
 local smoothedPointerX = 0
 local smoothedPointerY = 0
 local idleLogged = false
+local pointerMotionLogged = false
 
 local function writeCamera(cframe: CFrame, fov: number)
 	writingCamera = true
@@ -89,26 +90,22 @@ local function writeCamera(cframe: CFrame, fov: number)
 	writingCamera = false
 end
 
-local function applyDeadzone(value: number): number
-	local magnitude = math.abs(value)
-	if magnitude <= POINTER_DEADZONE then
-		return 0
-	end
-
-	local remapped = (magnitude - POINTER_DEADZONE) / (1 - POINTER_DEADZONE)
-	return math.sign(value) * math.clamp(remapped, 0, 1)
-end
-
 local function getNormalizedPointer(): (number, number)
 	local viewport = camera.ViewportSize
 	if viewport.X <= 0 or viewport.Y <= 0 then
 		return 0, 0
 	end
 
+	-- GetMouseLocation includes the Roblox GUI inset. Subtracting the upper-left
+	-- inset keeps the center of the rendered viewport at normalized 0,0 in both
+	-- Studio and the live client.
 	local mouse = UserInputService:GetMouseLocation()
-	local x = math.clamp(((mouse.X / viewport.X) - 0.5) * 2, -1, 1)
-	local y = math.clamp(((mouse.Y / viewport.Y) - 0.5) * 2, -1, 1)
-	return applyDeadzone(x), applyDeadzone(y)
+	local topLeftInset = select(1, GuiService:GetGuiInset())
+	local viewportMouse = mouse - topLeftInset
+
+	local x = math.clamp(((viewportMouse.X / viewport.X) - 0.5) * 2, -1, 1)
+	local y = math.clamp(((viewportMouse.Y / viewport.Y) - 0.5) * 2, -1, 1)
+	return x, y
 end
 
 local function buildMouseParallaxCamera(dt: number): CFrame
@@ -121,6 +118,15 @@ local function buildMouseParallaxCamera(dt: number): CFrame
 	local localY = -smoothedPointerY * PARALLAX_Y_STUDS
 	local pitch = math.rad(-smoothedPointerY * PARALLAX_PITCH_DEGREES)
 	local yaw = math.rad(-smoothedPointerX * PARALLAX_YAW_DEGREES)
+
+	if not pointerMotionLogged and (math.abs(smoothedPointerX) > 0.20 or math.abs(smoothedPointerY) > 0.20) then
+		pointerMotionLogged = true
+		print(string.format(
+			"[BankersCamera] pointer motion detected x=%.2f y=%.2f; camera parallax is driving",
+			smoothedPointerX,
+			smoothedPointerY
+		))
+	end
 
 	return cameraEnd
 		* CFrame.new(localX, localY, 0)
@@ -170,7 +176,7 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function(
 		authoritativeFov = END_FOV
 		if not idleLogged then
 			idleLogged = true
-			print("[BankersCamera] mouse micro-parallax active")
+			print("[BankersCamera] mouse micro-parallax active (test strength)")
 		end
 	end
 
