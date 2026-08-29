@@ -1,4 +1,4 @@
-# Bankers PvP — Broken-inspired mechanics foundation
+# Bankers PvP — Broken donor foundation
 
 This is a separate gameplay lane from the Bankers menu and the armored-truck getaway.
 
@@ -6,74 +6,51 @@ This is a separate gameplay lane from the Bankers menu and the armored-truck get
 
 - `Bankers.rbxl` + `default.project.json` = cinematic/menu place
 - `BankersGameplay.rbxl` + `gameplay.project.json` = co-op getaway prototype
-- `BankersPvP.rbxl` + `pvp.project.json` = PvP arena place
+- `BankersPvP.rbxl` + `pvp.project.json` = earlier clean-room PvP mechanics prototype
+- `BankersPvPBrokenBase.rbxl` = primary PvP donor base built from the open-source `Broken.` snapshot
 
 Do not connect the wrong Rojo project to another place.
 
-## Current PvP foundation
+## Current direction
 
-The first pass is intentionally map-light and mechanics-heavy:
+Bankers PvP will no longer start by rebuilding Broken's combat from the bottom. The primary PvP foundation is the actual open-source Broken place snapshot:
 
-- FFA respawns
-- KOs / WOs leaderboard
-- server-authoritative hitscan damage
-- headshot multiplier
-- spawn protection
-- automatic rifle
-- magazine + reserve ammo
-- reload timing
-- third-person shoulder camera behavior
-- right-mouse ADS
-- recoil
-- center-screen crosshair
-- hit marker
-- Shift sprint
-- C / LeftCtrl crouch
-- sprint + C / LeftCtrl slide
+`dwmk/RobloxGames/BrokenPVPgame_20240713_01.rbxl`
 
-## Controls
+This immediately gives us the donor game's complete gun roster, combat scripts, movement, camera/aim handling, round/gameplay plumbing, UI/shop/loadout systems, NPC support, and map framework. We will tailor those systems for Bankers rather than re-implementing them one-by-one.
 
-| Input | Action |
-| --- | --- |
-| WASD | Move |
-| Shift | Sprint |
-| C / Left Ctrl | Crouch |
-| Sprint + C / Left Ctrl | Slide |
-| Left Mouse | Fire |
-| Right Mouse | ADS |
-| R | Reload |
-| Space | Jump |
+The existing `src/pvp/` clean-room implementation remains in the repository as a reference/fallback, but it is not the main foundation going forward.
 
-## First local setup
+## Install the donor base
 
-Create a new Roblox Studio Baseplate and immediately save it as:
-
-`D:\RobloxProjects\Bankers\BankersPvP.rbxl`
-
-Then run:
+From PowerShell:
 
 ```powershell
 cd D:\RobloxProjects\Bankers
 git pull origin main
-rojo serve pvp.project.json
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-broken-pvp.ps1
 ```
 
-Connect the Rojo plugin from the `BankersPvP.rbxl` Studio window.
+The bootstrap downloads the pinned upstream snapshot and verifies its Git blob SHA before installing:
 
-In Edit mode, bake the disposable mechanics arena:
+`D:\RobloxProjects\Bankers\BankersPvPBrokenBase.rbxl`
 
-```lua
-require(game.ServerScriptService.BankersPvP.BuildPvPTestArena).Run()
-```
+Open `BankersPvPBrokenBase.rbxl` directly in Roblox Studio.
 
-Save the place with Ctrl+S, then press Play.
+### Important
 
-## Testing PvP with multiple players
+Do **not** connect `pvp.project.json` to `BankersPvPBrokenBase.rbxl`. The earlier `pvp.project.json` makes `StarterPlayerScripts` authoritative for the clean-room prototype and could remove donor client scripts. We will create a donor-safe Bankers overlay project only after the Broken hierarchy has been inspected and the retained systems are identified.
 
-In Studio use the Test tab and start a local server with at least two players. The weapon service only damages other player characters; it does not self-damage.
+## First donor-tailoring pass
 
-## Design direction
+The first pass on the donor base is intentionally subtraction-first:
 
-The temporary arena is not intended to ship. Once movement and firearm feel are validated, replace it with purpose-built Bankers maps while keeping the combat services map-agnostic.
+1. Verify Broken runs unchanged in Studio.
+2. Inventory all guns and combat/movement modules.
+3. Keep the complete mechanics and weapon set initially.
+4. Select one Broken map as the temporary Bankers PvP test map.
+5. Remove/disable the other map rotations only after the map hierarchy is confirmed.
+6. Remove Broken branding and unrelated presentation without changing mechanics.
+7. Start tuning movement, gun balance, recoil, camera, animations, and round rules for Bankers.
 
-The target feel is a quick, readable arena shooter inspired by the open-source Roblox game `Broken.` without coupling Bankers to Broken's old place structure.
+This gets Bankers to a mature PvP baseline immediately while keeping the menu and getaway places isolated.
