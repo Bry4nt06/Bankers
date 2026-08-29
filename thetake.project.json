@@ -2,40 +2,6 @@
   "name": "THE TAKE",
   "tree": {
     "$className": "DataModel",
-    "Workspace": {
-      "$className": "Workspace",
-      "$ignoreUnknownInstances": true,
-      "introcameras": {
-        "$className": "Folder",
-        "$ignoreUnknownInstances": false
-      }
-    },
-    "ServerStorage": {
-      "$className": "ServerStorage",
-      "$ignoreUnknownInstances": true,
-      "Intro": {
-        "$className": "Folder",
-        "$ignoreUnknownInstances": false
-      }
-    },
-    "StarterGui": {
-      "$className": "StarterGui",
-      "$ignoreUnknownInstances": true,
-      "CutsceneUI": {
-        "$className": "ScreenGui",
-        "$ignoreUnknownInstances": false,
-        "$properties": {
-          "Enabled": false
-        }
-      },
-      "LoadingScreenGui": {
-        "$className": "ScreenGui",
-        "$ignoreUnknownInstances": false,
-        "$properties": {
-          "Enabled": false
-        }
-      }
-    },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
@@ -51,10 +17,6 @@
         "$ignoreUnknownInstances": true,
         "cutsceneHandler": {
           "$path": "src/thetake/donor_overrides/cutsceneHandler.client.luau"
-        },
-        "BankersBrokenOverlay": {
-          "$className": "Folder",
-          "$ignoreUnknownInstances": false
         },
         "TheTake": {
           "$path": "src/thetake/client"
