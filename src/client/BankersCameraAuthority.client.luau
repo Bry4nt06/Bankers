@@ -1,14 +1,32 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
 local INTRO_DURATION = 7.0
+local INTRO_HOLD_DURATION = 0.35
 local START_FOV = 58
 local END_FOV = 44
 local BIND_NAME = "BankersCameraAuthority"
 local POSITION_EPSILON = 0.001
 local LOOK_EPSILON = 0.0001
+
+-- Broken-inspired menu-camera tuning. Keep these intentionally restrained so
+-- the effect reads as cinematic parallax rather than free-look gameplay camera.
+local PARALLAX_X_STUDS = 0.65
+local PARALLAX_Y_STUDS = 0.32
+local PARALLAX_YAW_DEGREES = 1.6
+local PARALLAX_PITCH_DEGREES = 0.75
+local PARALLAX_FOV_DELTA = 0.35
+local POINTER_DEADZONE = 0.035
+local POINTER_RESPONSE = 5.5
+
+local IDLE_SWAY_X_STUDS = 0.055
+local IDLE_SWAY_Y_STUDS = 0.035
+local IDLE_SWAY_YAW_DEGREES = 0.10
+local IDLE_SWAY_PITCH_DEGREES = 0.07
+local IDLE_SWAY_SPEED = 0.42
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -65,6 +83,9 @@ local authoritativeCFrame = cameraStart
 local authoritativeFov = START_FOV
 local writingCamera = false
 local overrideCorrections = 0
+local smoothedPointerX = 0
+local smoothedPointerY = 0
+local idleLogged = false
 
 local function writeCamera(cframe: CFrame, fov: number)
 	writingCamera = true
@@ -74,8 +95,56 @@ local function writeCamera(cframe: CFrame, fov: number)
 	writingCamera = false
 end
 
+local function applyDeadzone(value: number): number
+	local magnitude = math.abs(value)
+	if magnitude <= POINTER_DEADZONE then
+		return 0
+	end
+
+	local remapped = (magnitude - POINTER_DEADZONE) / (1 - POINTER_DEADZONE)
+	return math.sign(value) * math.clamp(remapped, 0, 1)
+end
+
+local function getNormalizedPointer(): (number, number)
+	local viewport = camera.ViewportSize
+	if viewport.X <= 0 or viewport.Y <= 0 then
+		return 0, 0
+	end
+
+	local mouse = UserInputService:GetMouseLocation()
+	local x = math.clamp(((mouse.X / viewport.X) - 0.5) * 2, -1, 1)
+	local y = math.clamp(((mouse.Y / viewport.Y) - 0.5) * 2, -1, 1)
+	return applyDeadzone(x), applyDeadzone(y)
+end
+
+local function buildIdleCamera(elapsed: number, dt: number): (CFrame, number)
+	local targetX, targetY = getNormalizedPointer()
+	local response = 1 - math.exp(-POINTER_RESPONSE * math.max(dt, 0))
+	smoothedPointerX += (targetX - smoothedPointerX) * response
+	smoothedPointerY += (targetY - smoothedPointerY) * response
+
+	local idleTime = math.max(0, elapsed - INTRO_DURATION - INTRO_HOLD_DURATION)
+	local swayA = math.sin(idleTime * IDLE_SWAY_SPEED)
+	local swayB = math.cos(idleTime * IDLE_SWAY_SPEED * 0.71)
+
+	local localX = (smoothedPointerX * PARALLAX_X_STUDS) + (swayB * IDLE_SWAY_X_STUDS)
+	local localY = (-smoothedPointerY * PARALLAX_Y_STUDS) + (swayA * IDLE_SWAY_Y_STUDS)
+
+	local pitch = math.rad((-smoothedPointerY * PARALLAX_PITCH_DEGREES) + (swayB * IDLE_SWAY_PITCH_DEGREES))
+	local yaw = math.rad((-smoothedPointerX * PARALLAX_YAW_DEGREES) + (swayA * IDLE_SWAY_YAW_DEGREES))
+
+	local pointerMagnitude = math.clamp(math.sqrt((smoothedPointerX * smoothedPointerX) + (smoothedPointerY * smoothedPointerY)), 0, 1)
+	local fov = END_FOV + (pointerMagnitude * PARALLAX_FOV_DELTA)
+
+	local cframe = cameraEnd
+		* CFrame.new(localX, localY, 0)
+		* CFrame.Angles(pitch, yaw, 0)
+
+	return cframe, fov
+end
+
 -- If another LocalScript writes CurrentCamera after Bankers does, immediately
--- restore the Bankers-authored frame. This makes the menu camera deterministic.
+-- restore the Bankers-authored frame. This keeps the menu camera deterministic.
 camera:GetPropertyChangedSignal("CFrame"):Connect(function()
 	if writingCamera then
 		return
@@ -101,19 +170,28 @@ local startedAt = os.clock()
 local finishedLogged = false
 
 RunService:UnbindFromRenderStep(BIND_NAME)
-RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function()
-	local alpha = math.clamp((os.clock() - startedAt) / INTRO_DURATION, 0, 1)
+RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function(dt)
+	local elapsed = os.clock() - startedAt
+	local alpha = math.clamp(elapsed / INTRO_DURATION, 0, 1)
 	local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 
 	if alpha < 1 then
 		authoritativeCFrame = cameraStart:Lerp(cameraEnd, eased)
 		authoritativeFov = START_FOV + (END_FOV - START_FOV) * eased
-	else
+	elseif elapsed < INTRO_DURATION + INTRO_HOLD_DURATION then
+		-- Brief exact hold makes the cinematic arrival feel deliberate before
+		-- transitioning into the menu's mouse-reactive idle camera.
 		authoritativeCFrame = cameraEnd
 		authoritativeFov = END_FOV
+	else
+		authoritativeCFrame, authoritativeFov = buildIdleCamera(elapsed, dt)
+		if not idleLogged then
+			idleLogged = true
+			print("[BankersCamera] Broken-style menu parallax active")
+		end
 	end
 
-	-- Run at RenderPriority.Last so this is the final normal camera write before render.
+	-- Final normal camera write before render.
 	writeCamera(authoritativeCFrame, authoritativeFov)
 
 	if alpha >= 1 and not finishedLogged then
@@ -135,7 +213,5 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function(
 			lookError,
 			overrideCorrections
 		))
-		print("[BankersCamera][CLIENT CHECK] live CFrame:", camera.CFrame)
-		print("[BankersCamera][CLIENT CHECK] expected End CFrame:", cameraEnd)
 	end
 end)
