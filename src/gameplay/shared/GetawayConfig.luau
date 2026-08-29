@@ -45,6 +45,7 @@ GetawayConfig.CheckpointFolderName = "RouteCheckpoints"
 GetawayConfig.PoliceSpawnFolderName = "PoliceSpawnPoints"
 GetawayConfig.ExtractionZoneName = "ExtractionZone"
 GetawayConfig.TruckStartName = "ArmoredTruckStart"
+GetawayConfig.TruckModelName = "GetawayArmoredTruck"
 
 -- Crossing these checkpoint sequence numbers changes the mission intensity.
 GetawayConfig.BreakContactCheckpoint = 5
