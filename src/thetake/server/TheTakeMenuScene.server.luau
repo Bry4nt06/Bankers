@@ -5,6 +5,8 @@ local START_MARKER_NAME = "MenuCameraStart"
 local END_MARKER_NAME = "MenuCameraEnd"
 local CONFIG_FOLDER_NAME = "TheTakeMenuCameraConfig"
 
+print("[TheTakeMenu] server cinematic setup starting")
+
 local scene = workspace:WaitForChild(SCENE_NAME, 15)
 if not scene then
 	warn("[TheTakeMenu] Workspace.TheTakeMenuScene is missing; cinematic server setup skipped")
@@ -20,19 +22,32 @@ local function findMarker(name: string): BasePart?
 end
 
 local function stabilizeScene()
+	local startedAt = os.clock()
+	local parts = 0
+	local scripts = 0
+
 	for _, descendant in ipairs(scene:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.Anchored = true
 			descendant.AssemblyLinearVelocity = Vector3.zero
 			descendant.AssemblyAngularVelocity = Vector3.zero
+			parts += 1
 		elseif descendant:IsA("Tool") then
 			descendant.CanBeDropped = false
 		elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
 			-- Everything inside TheTakeMenuScene is display-only. Donor gameplay
 			-- scripts live elsewhere and are intentionally untouched.
 			descendant.Enabled = false
+			scripts += 1
 		end
 	end
+
+	print(string.format(
+		"[TheTakeMenu] display scene stabilized asynchronously: %d parts, %d scripts, %.2fs",
+		parts,
+		scripts,
+		os.clock() - startedAt
+	))
 end
 
 local function hideMarker(marker: BasePart)
@@ -56,12 +71,12 @@ local function hideMarker(marker: BasePart)
 	end
 end
 
-local function publishCameraConfig()
+local function publishCameraConfig(): boolean
 	local startMarker = findMarker(START_MARKER_NAME)
 	local endMarker = findMarker(END_MARKER_NAME)
 	if not startMarker or not endMarker then
 		warn("[TheTakeMenu] MenuCameraStart/MenuCameraEnd missing inside TheTakeMenuScene")
-		return
+		return false
 	end
 
 	local folder = ReplicatedStorage:FindFirstChild(CONFIG_FOLDER_NAME)
@@ -70,6 +85,7 @@ local function publishCameraConfig()
 		folder.Name = CONFIG_FOLDER_NAME
 		folder.Parent = ReplicatedStorage
 	end
+	folder:SetAttribute("Ready", false)
 
 	local startValue = folder:FindFirstChild("Start")
 	if not startValue then
@@ -91,11 +107,15 @@ local function publishCameraConfig()
 
 	hideMarker(startMarker)
 	hideMarker(endMarker)
-	print("[TheTakeMenu] integrated cinematic camera config ready; Broken donor systems untouched")
+	print("[TheTakeMenu] cinematic camera config published immediately")
+	return true
 end
 
-stabilizeScene()
+-- Camera readiness is the startup critical path. Publish it BEFORE walking the
+-- very large display scene so the client can begin the cinematic immediately.
 publishCameraConfig()
+
+task.spawn(stabilizeScene)
 
 -- Catch late-loaded appearance/prop descendants inside the cinematic model only.
 scene.DescendantAdded:Connect(function(descendant)
@@ -114,4 +134,4 @@ scene.DescendantAdded:Connect(function(descendant)
 	end
 end)
 
-print("[TheTakeMenu] TheTakeMenuScene stabilized as display-only content")
+print("[TheTakeMenu] server cinematic setup handed off to asynchronous stabilization")
