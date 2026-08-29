@@ -1,0 +1,30 @@
+{
+  "name": "Bankers PvP Arena",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "BankersPvP": {
+        "$path": "src/pvp/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "BankersPvP": {
+        "$path": "src/pvp/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": false,
+        "BankersPvP": {
+          "$path": "src/pvp/client"
+        }
+      }
+    }
+  }
+}
