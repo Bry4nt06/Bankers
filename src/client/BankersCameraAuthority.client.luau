@@ -7,6 +7,8 @@ local INTRO_DURATION = 7.0
 local START_FOV = 58
 local END_FOV = 44
 local BIND_NAME = "BankersCameraAuthority"
+local POSITION_EPSILON = 0.001
+local LOOK_EPSILON = 0.0001
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -59,47 +61,81 @@ print(string.format(
 	cameraEnd.Position.Z
 ))
 
-camera.CameraType = Enum.CameraType.Scriptable
-camera.CFrame = cameraStart
-camera.FieldOfView = START_FOV
+local authoritativeCFrame = cameraStart
+local authoritativeFov = START_FOV
+local writingCamera = false
+local overrideCorrections = 0
+
+local function writeCamera(cframe: CFrame, fov: number)
+	writingCamera = true
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = cframe
+	camera.FieldOfView = fov
+	writingCamera = false
+end
+
+-- If another LocalScript writes CurrentCamera after Bankers does, immediately
+-- restore the Bankers-authored frame. This makes the menu camera deterministic.
+camera:GetPropertyChangedSignal("CFrame"):Connect(function()
+	if writingCamera then
+		return
+	end
+
+	local positionError = (camera.CFrame.Position - authoritativeCFrame.Position).Magnitude
+	local lookError = (camera.CFrame.LookVector - authoritativeCFrame.LookVector).Magnitude
+	if positionError <= POSITION_EPSILON and lookError <= LOOK_EPSILON then
+		return
+	end
+
+	overrideCorrections += 1
+	writeCamera(authoritativeCFrame, authoritativeFov)
+
+	if overrideCorrections == 1 then
+		warn("[BankersCamera] another client camera writer was detected and overridden")
+	end
+end)
+
+writeCamera(cameraStart, START_FOV)
 
 local startedAt = os.clock()
 local finishedLogged = false
 
 RunService:UnbindFromRenderStep(BIND_NAME)
-RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 20, function()
+RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function()
 	local alpha = math.clamp((os.clock() - startedAt) / INTRO_DURATION, 0, 1)
 	local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 
-	camera.CameraType = Enum.CameraType.Scriptable
-
 	if alpha < 1 then
-		camera.CFrame = cameraStart:Lerp(cameraEnd, eased)
-		camera.FieldOfView = START_FOV + (END_FOV - START_FOV) * eased
+		authoritativeCFrame = cameraStart:Lerp(cameraEnd, eased)
+		authoritativeFov = START_FOV + (END_FOV - START_FOV) * eased
 	else
-		camera.CFrame = cameraEnd
-		camera.FieldOfView = END_FOV
+		authoritativeCFrame = cameraEnd
+		authoritativeFov = END_FOV
+	end
 
-		if not finishedLogged then
-			finishedLogged = true
+	-- Run at RenderPriority.Last so this is the final normal camera write before render.
+	writeCamera(authoritativeCFrame, authoritativeFov)
 
-			local positionError = (camera.CFrame.Position - cameraEnd.Position).Magnitude
-			local lookError = (camera.CFrame.LookVector - cameraEnd.LookVector).Magnitude
+	if alpha >= 1 and not finishedLogged then
+		finishedLogged = true
 
-			print("[BankersCamera] reached exact MenuCameraEnd framing")
-			print(string.format(
-				"[BankersCamera][CLIENT CHECK] live %.3f, %.3f, %.3f | expected %.3f, %.3f, %.3f | position error %.6f | look error %.6f",
-				camera.CFrame.Position.X,
-				camera.CFrame.Position.Y,
-				camera.CFrame.Position.Z,
-				cameraEnd.Position.X,
-				cameraEnd.Position.Y,
-				cameraEnd.Position.Z,
-				positionError,
-				lookError
-			))
-			print("[BankersCamera][CLIENT CHECK] live CFrame:", camera.CFrame)
-			print("[BankersCamera][CLIENT CHECK] expected End CFrame:", cameraEnd)
-		end
+		local positionError = (camera.CFrame.Position - cameraEnd.Position).Magnitude
+		local lookError = (camera.CFrame.LookVector - cameraEnd.LookVector).Magnitude
+
+		print("[BankersCamera] reached exact MenuCameraEnd framing")
+		print(string.format(
+			"[BankersCamera][CLIENT CHECK] live %.3f, %.3f, %.3f | expected %.3f, %.3f, %.3f | position error %.6f | look error %.6f | override corrections %d",
+			camera.CFrame.Position.X,
+			camera.CFrame.Position.Y,
+			camera.CFrame.Position.Z,
+			cameraEnd.Position.X,
+			cameraEnd.Position.Y,
+			cameraEnd.Position.Z,
+			positionError,
+			lookError,
+			overrideCorrections
+		))
+		print("[BankersCamera][CLIENT CHECK] live CFrame:", camera.CFrame)
+		print("[BankersCamera][CLIENT CHECK] expected End CFrame:", cameraEnd)
 	end
 end)
