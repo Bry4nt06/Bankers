@@ -23,6 +23,9 @@
         },
         "BankersMenu": {
           "$path": "src/client/BankersMenu.client.luau"
+        },
+        "BankersCameraAuthority": {
+          "$path": "src/client/BankersCameraAuthority.client.luau"
         }
       }
     }
