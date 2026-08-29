@@ -11,7 +11,9 @@ local CONFIG_FOLDER_NAME = "TheTakeMenuCameraConfig"
 local CAMERA_READY_ATTRIBUTE = "TheTakeCameraReady"
 local STARTED_ATTRIBUTE = "TheTakeGameplayStarted"
 local MENU_REVEAL_DELAY = 4.75
+local CINEMATIC_READY_TIMEOUT = 12
 
+print("[TheTakeMenu] client boot started")
 player:SetAttribute(STARTED_ATTRIBUTE, false)
 
 local function setCoreGuiEnabled(enabled: boolean)
@@ -52,65 +54,47 @@ local function setCharacterLocallyHidden(character: Model?, hidden: boolean)
 	end
 end
 
-local function normalize(value: string): string
-	return string.lower((value:gsub("%s+", "")))
+local function destroyBrokenPresentationGui()
+	for _, name in ipairs({"CutsceneUI", "LoadingScreenGui"}) do
+		local gui = playerGui:FindFirstChild(name)
+		if gui then
+			gui:Destroy()
+			print("[TheTakeMenu] removed donor PlayerGui." .. name)
+		end
+	end
 end
 
-local function findBrokenStarterScreenGui(): ScreenGui?
-	local bestButton: GuiButton? = nil
-	local bestScore = 0
-
-	for _, descendant in ipairs(playerGui:GetDescendants()) do
-		if descendant:IsA("GuiButton") then
-			local screenGui = descendant:FindFirstAncestorOfClass("ScreenGui")
-			if screenGui and screenGui.Name ~= "TheTakeMenuGui" and screenGui.Name ~= "TheTakeBootGui" then
-				local score = 0
-				local name = normalize(descendant.Name)
-				if name == "play" or name == "playbutton" or name == "start" or name == "startbutton" then
-					score += 10
-			elseif string.find(name, "play", 1, true) or string.find(name, "start", 1, true) then
-					score += 5
-				end
-
-				if descendant:IsA("TextButton") then
-					local text = normalize(descendant.Text)
-					if text == "play" or text == "start" then
-						score += 12
-					elseif string.find(text, "play", 1, true) or string.find(text, "start", 1, true) then
-						score += 6
-					end
-				end
-
-				if score > bestScore then
-					bestScore = score
-					bestButton = descendant
-				end
+destroyBrokenPresentationGui()
+playerGui.ChildAdded:Connect(function(child)
+	if child.Name == "CutsceneUI" or child.Name == "LoadingScreenGui" then
+		task.defer(function()
+			if child.Parent then
+				child:Destroy()
 			end
-		end
+		end)
 	end
+end)
 
-	if bestButton and bestScore >= 10 then
-		return bestButton:FindFirstAncestorOfClass("ScreenGui")
-	end
-	return nil
-end
-
-local function suppressBrokenStarterMenu()
-	local deadline = os.clock() + 20
-	repeat
-		local brokenMenu = findBrokenStarterScreenGui()
-		if brokenMenu then
-			brokenMenu.Enabled = false
-			brokenMenu:SetAttribute("TheTakeSuppressed", true)
-			print("[TheTakeMenu] suppressed Broken starter menu: " .. brokenMenu.Name)
-			return
+local function startDonorGameplay()
+	local spawnRemote = ReplicatedStorage:FindFirstChild("SpawnPlayer")
+	if spawnRemote and spawnRemote:IsA("RemoteEvent") then
+		spawnRemote:FireServer()
+		print("[TheTakeMenu] fired donor SpawnPlayer RemoteEvent")
+		return true
+	elseif spawnRemote and spawnRemote:IsA("RemoteFunction") then
+		local ok, err = pcall(function()
+			spawnRemote:InvokeServer()
+		end)
+		if ok then
+			print("[TheTakeMenu] invoked donor SpawnPlayer RemoteFunction")
+			return true
 		end
-		task.wait(0.1)
-	until os.clock() >= deadline
-	warn("[TheTakeMenu] Broken starter menu was not identified; donor HUD was otherwise left untouched")
+		warn("[TheTakeMenu] donor SpawnPlayer RemoteFunction failed: " .. tostring(err))
+		return false
+	end
+	warn("[TheTakeMenu] donor SpawnPlayer remote missing")
+	return false
 end
-
-task.spawn(suppressBrokenStarterMenu)
 
 setCoreGuiEnabled(false)
 setControlsEnabled(false)
@@ -124,13 +108,11 @@ end)
 UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 UserInputService.MouseIconEnabled = true
 
-local oldBoot = playerGui:FindFirstChild("TheTakeBootGui")
-if oldBoot then
-	oldBoot:Destroy()
-end
-local oldMenu = playerGui:FindFirstChild("TheTakeMenuGui")
-if oldMenu then
-	oldMenu:Destroy()
+for _, name in ipairs({"TheTakeBootGui", "TheTakeMenuGui"}) do
+	local existing = playerGui:FindFirstChild(name)
+	if existing then
+		existing:Destroy()
+	end
 end
 
 local bootGui = Instance.new("ScreenGui")
@@ -146,20 +128,44 @@ bootBlackout.BackgroundColor3 = Color3.new(0, 0, 0)
 bootBlackout.BorderSizePixel = 0
 bootBlackout.Parent = bootGui
 
-local config = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, 15)
+local function failOpen(reason: string)
+	warn("[TheTakeMenu] cinematic startup failed open: " .. reason)
+	player:SetAttribute(STARTED_ATTRIBUTE, true)
+	setCoreGuiEnabled(true)
+	setControlsEnabled(true)
+	setCharacterLocallyHidden(player.Character, false)
+	if bootGui.Parent then
+		bootGui:Destroy()
+	end
+	UserInputService.MouseIconEnabled = false
+	startDonorGameplay()
+end
+
+local config = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, CINEMATIC_READY_TIMEOUT)
 if not config then
-	warn("[TheTakeMenu] camera config missing; keeping startup blackout")
+	failOpen("camera config folder did not replicate within timeout")
 	return
 end
 
-local deadline = os.clock() + 20
-while player:GetAttribute(CAMERA_READY_ATTRIBUTE) ~= true and os.clock() < deadline do
+local configDeadline = os.clock() + CINEMATIC_READY_TIMEOUT
+while config:GetAttribute("Ready") ~= true and os.clock() < configDeadline do
+	task.wait(0.05)
+end
+if config:GetAttribute("Ready") ~= true then
+	failOpen("camera config never became Ready")
+	return
+end
+print("[TheTakeMenu] server camera config is ready")
+
+local cameraDeadline = os.clock() + CINEMATIC_READY_TIMEOUT
+while player:GetAttribute(CAMERA_READY_ATTRIBUTE) ~= true and os.clock() < cameraDeadline do
 	task.wait(0.05)
 end
 if player:GetAttribute(CAMERA_READY_ATTRIBUTE) ~= true then
-	warn("[TheTakeMenu] cinematic camera never became ready; keeping startup blackout")
+	failOpen("camera client never reported ready")
 	return
 end
+print("[TheTakeMenu] camera client is ready; revealing cinematic")
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "TheTakeMenuGui"
@@ -272,6 +278,7 @@ local function showMenu()
 	TweenService:Create(playButton, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		TextTransparency = 0,
 	}):Play()
+	print("[TheTakeMenu] THE TAKE PLAY menu revealed")
 end
 
 task.delay(MENU_REVEAL_DELAY, showMenu)
@@ -289,25 +296,6 @@ playButton.MouseLeave:Connect(function()
 end)
 
 local playSelected = false
-local function startBrokenGameplay()
-	local spawnRemote = ReplicatedStorage:FindFirstChild("SpawnPlayer")
-	if spawnRemote and spawnRemote:IsA("RemoteEvent") then
-		spawnRemote:FireServer()
-		print("[TheTakeMenu] fired donor SpawnPlayer RemoteEvent")
-	elseif spawnRemote and spawnRemote:IsA("RemoteFunction") then
-		local ok, err = pcall(function()
-			spawnRemote:InvokeServer()
-		end)
-		if ok then
-			print("[TheTakeMenu] invoked donor SpawnPlayer RemoteFunction")
-		else
-			warn("[TheTakeMenu] donor SpawnPlayer RemoteFunction failed: " .. tostring(err))
-		end
-	else
-		warn("[TheTakeMenu] donor SpawnPlayer remote missing; gameplay handoff may require Broken start-path inspection")
-	end
-end
-
 playButton.Activated:Connect(function()
 	if playSelected then
 		return
@@ -324,12 +312,12 @@ playButton.Activated:Connect(function()
 	setCoreGuiEnabled(true)
 	setControlsEnabled(true)
 	setCharacterLocallyHidden(player.Character, false)
-	startBrokenGameplay()
+	startDonorGameplay()
 
 	task.wait(0.35)
 	gui:Destroy()
 	UserInputService.MouseIconEnabled = false
-	print("[TheTakeMenu] cinematic frontend handed off to Broken donor gameplay")
+	print("[TheTakeMenu] cinematic frontend handed off to donor gameplay")
 end)
 
 print("[TheTakeMenu] integrated THE TAKE frontend ready")
