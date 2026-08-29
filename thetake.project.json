@@ -15,6 +15,10 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$ignoreUnknownInstances": true,
+        "BankersBrokenOverlay": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": false
+        },
         "TheTake": {
           "$path": "src/thetake/client"
         }
