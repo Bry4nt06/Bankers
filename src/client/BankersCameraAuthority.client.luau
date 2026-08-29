@@ -1,4 +1,3 @@
-local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -6,21 +5,19 @@ local UserInputService = game:GetService("UserInputService")
 
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
 local INTRO_DURATION = 7.0
-local INTRO_HOLD_DURATION = 0.35
 local START_FOV = 58
 local END_FOV = 44
 local BIND_NAME = "BankersCameraAuthority"
 local POSITION_EPSILON = 0.001
 local LOOK_EPSILON = 0.0001
 
--- Test-strength menu micro-parallax. Once the mouse response is confirmed in
--- Studio, these can be reduced to a subtler final value without changing the
--- camera architecture.
-local PARALLAX_X_STUDS = 1.10
-local PARALLAX_Y_STUDS = 0.55
-local PARALLAX_YAW_DEGREES = 2.50
-local PARALLAX_PITCH_DEGREES = 1.25
-local POINTER_RESPONSE = 8.0
+-- Final-shot mouse micro-parallax. The mouse position on the exact final frame
+-- becomes the neutral point, eliminating the old post-intro snap/hitch.
+local PARALLAX_X_STUDS = 0.78
+local PARALLAX_Y_STUDS = 0.38
+local PARALLAX_YAW_DEGREES = 1.35
+local PARALLAX_PITCH_DEGREES = 0.68
+local POINTER_RESPONSE = 8.5
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -79,6 +76,8 @@ local writingCamera = false
 local overrideCorrections = 0
 local smoothedPointerX = 0
 local smoothedPointerY = 0
+local neutralMousePosition = UserInputService:GetMouseLocation()
+local introComplete = false
 local idleLogged = false
 local pointerMotionLogged = false
 
@@ -90,51 +89,50 @@ local function writeCamera(cframe: CFrame, fov: number)
 	writingCamera = false
 end
 
-local function getNormalizedPointer(): (number, number)
+local function refreshNeutralMousePosition()
+	neutralMousePosition = UserInputService:GetMouseLocation()
+end
+
+local function getPointerDeltaFromNeutral(): (number, number)
 	local viewport = camera.ViewportSize
 	if viewport.X <= 0 or viewport.Y <= 0 then
 		return 0, 0
 	end
 
-	-- GetMouseLocation includes the Roblox GUI inset. Subtracting the upper-left
-	-- inset keeps the center of the rendered viewport at normalized 0,0 in both
-	-- Studio and the live client.
 	local mouse = UserInputService:GetMouseLocation()
-	local topLeftInset = select(1, GuiService:GetGuiInset())
-	local viewportMouse = mouse - topLeftInset
+	local halfWidth = math.max(viewport.X * 0.5, 1)
+	local halfHeight = math.max(viewport.Y * 0.5, 1)
 
-	local x = math.clamp(((viewportMouse.X / viewport.X) - 0.5) * 2, -1, 1)
-	local y = math.clamp(((viewportMouse.Y / viewport.Y) - 0.5) * 2, -1, 1)
+	local x = math.clamp((mouse.X - neutralMousePosition.X) / halfWidth, -1, 1)
+	local y = math.clamp((mouse.Y - neutralMousePosition.Y) / halfHeight, -1, 1)
 	return x, y
 end
 
 local function buildMouseParallaxCamera(dt: number): CFrame
-	local targetX, targetY = getNormalizedPointer()
+	local targetX, targetY = getPointerDeltaFromNeutral()
 	local response = 1 - math.exp(-POINTER_RESPONSE * math.max(dt, 0))
 	smoothedPointerX += (targetX - smoothedPointerX) * response
 	smoothedPointerY += (targetY - smoothedPointerY) * response
+
+	if not pointerMotionLogged and (math.abs(smoothedPointerX) > 0.08 or math.abs(smoothedPointerY) > 0.08) then
+		pointerMotionLogged = true
+		print(string.format(
+			"[BankersCamera] mouse movement detected x=%.2f y=%.2f; parallax is driving",
+			smoothedPointerX,
+			smoothedPointerY
+		))
+	end
 
 	local localX = smoothedPointerX * PARALLAX_X_STUDS
 	local localY = -smoothedPointerY * PARALLAX_Y_STUDS
 	local pitch = math.rad(-smoothedPointerY * PARALLAX_PITCH_DEGREES)
 	local yaw = math.rad(-smoothedPointerX * PARALLAX_YAW_DEGREES)
 
-	if not pointerMotionLogged and (math.abs(smoothedPointerX) > 0.20 or math.abs(smoothedPointerY) > 0.20) then
-		pointerMotionLogged = true
-		print(string.format(
-			"[BankersCamera] pointer motion detected x=%.2f y=%.2f; camera parallax is driving",
-			smoothedPointerX,
-			smoothedPointerY
-		))
-	end
-
 	return cameraEnd
 		* CFrame.new(localX, localY, 0)
 		* CFrame.Angles(pitch, yaw, 0)
 end
 
--- If another LocalScript writes CurrentCamera after Bankers does, immediately
--- restore the Bankers-authored frame. This keeps the menu camera deterministic.
 camera:GetPropertyChangedSignal("CFrame"):Connect(function()
 	if writingCamera then
 		return
@@ -154,52 +152,57 @@ camera:GetPropertyChangedSignal("CFrame"):Connect(function()
 	end
 end)
 
+-- PlayerModule can leave the cursor locked after controls are disabled. Keep the
+-- menu cursor free so GetMouseLocation actually changes while the menu is open.
+UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+UserInputService.MouseIconEnabled = true
+
 writeCamera(cameraStart, START_FOV)
 
 local startedAt = os.clock()
-local finishedLogged = false
 
 RunService:UnbindFromRenderStep(BIND_NAME)
 RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function(dt)
+	if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+
 	local elapsed = os.clock() - startedAt
 	local alpha = math.clamp(elapsed / INTRO_DURATION, 0, 1)
 	local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 
 	if alpha < 1 then
+		-- Track the cursor during the cinematic so its final location becomes the
+		-- neutral point. This prevents any delayed snap after reaching the hero shot.
+		refreshNeutralMousePosition()
+		smoothedPointerX = 0
+		smoothedPointerY = 0
 		authoritativeCFrame = cameraStart:Lerp(cameraEnd, eased)
 		authoritativeFov = START_FOV + (END_FOV - START_FOV) * eased
-	elseif elapsed < INTRO_DURATION + INTRO_HOLD_DURATION then
-		authoritativeCFrame = cameraEnd
-		authoritativeFov = END_FOV
 	else
+		if not introComplete then
+			introComplete = true
+			refreshNeutralMousePosition()
+			smoothedPointerX = 0
+			smoothedPointerY = 0
+			authoritativeCFrame = cameraEnd
+			authoritativeFov = END_FOV
+
+			print("[BankersCamera] reached exact MenuCameraEnd framing")
+			print(string.format(
+				"[BankersCamera][CLIENT CHECK] final position error %.6f | look error %.6f | override corrections %d",
+				(camera.CFrame.Position - cameraEnd.Position).Magnitude,
+				(camera.CFrame.LookVector - cameraEnd.LookVector).Magnitude,
+				overrideCorrections
+			))
+		elseif not idleLogged then
+			idleLogged = true
+			print("[BankersCamera] mouse micro-parallax active; move the cursor to shift the final shot")
+		end
+
 		authoritativeCFrame = buildMouseParallaxCamera(dt)
 		authoritativeFov = END_FOV
-		if not idleLogged then
-			idleLogged = true
-			print("[BankersCamera] mouse micro-parallax active (test strength)")
-		end
 	end
 
 	writeCamera(authoritativeCFrame, authoritativeFov)
-
-	if alpha >= 1 and not finishedLogged then
-		finishedLogged = true
-
-		local positionError = (camera.CFrame.Position - cameraEnd.Position).Magnitude
-		local lookError = (camera.CFrame.LookVector - cameraEnd.LookVector).Magnitude
-
-		print("[BankersCamera] reached exact MenuCameraEnd framing")
-		print(string.format(
-			"[BankersCamera][CLIENT CHECK] live %.3f, %.3f, %.3f | expected %.3f, %.3f, %.3f | position error %.6f | look error %.6f | override corrections %d",
-			camera.CFrame.Position.X,
-			camera.CFrame.Position.Y,
-			camera.CFrame.Position.Z,
-			cameraEnd.Position.X,
-			cameraEnd.Position.Y,
-			cameraEnd.Position.Z,
-			positionError,
-			lookError,
-			overrideCorrections
-		))
-	end
 end)
