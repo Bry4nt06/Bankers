@@ -1,0 +1,17 @@
+{
+  "name": "Bankers Broken PvP Overlay",
+  "tree": {
+    "$className": "DataModel",
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": true,
+        "BankersBrokenOverlay": {
+          "$path": "src/broken_pvp_overlay/client"
+        }
+      }
+    }
+  }
+}
