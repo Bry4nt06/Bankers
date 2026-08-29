@@ -10,6 +10,12 @@
       },
       "MenuScene": {
         "$path": "src/server/MenuScene.server.luau"
+      },
+      "RobberLoadouts": {
+        "$path": "src/server/RobberLoadouts.luau"
+      },
+      "OutfitMenuRigs": {
+        "$path": "src/server/OutfitMenuRigs.server.luau"
       }
     },
     "StarterPlayer": {
