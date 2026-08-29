@@ -4,6 +4,7 @@ local LoadoutConfig = require(script.Parent:WaitForChild("RobberLoadouts"))
 
 local ATTRIBUTE_NAME = LoadoutConfig.AttributeName or "BankersLoadout"
 local LOADOUTS = LoadoutConfig.Loadouts or {}
+local DEFAULT_BASE_COLOR = LoadoutConfig.DefaultBaseColor or Color3.fromRGB(31, 32, 35)
 
 local DESCRIPTION_FIELDS = {
 	"Shirt",
@@ -122,13 +123,34 @@ local function removeRuntimeGear(rig: Model)
 	end
 end
 
-local function applyDescription(humanoid: Humanoid, loadout)
+local function applyBaseColor(rig: Model, loadout)
+	local color = loadout.BaseColor or DEFAULT_BASE_COLOR
+	if typeof(color) ~= "Color3" then
+		color = DEFAULT_BASE_COLOR
+	end
+
+	local bodyColors = rig:FindFirstChildOfClass("BodyColors")
+	if not bodyColors then
+		bodyColors = Instance.new("BodyColors")
+		bodyColors.Name = "BankersBodyColors"
+		bodyColors.Parent = rig
+	end
+
+	bodyColors.HeadColor3 = color
+	bodyColors.LeftArmColor3 = color
+	bodyColors.RightArmColor3 = color
+	bodyColors.LeftLegColor3 = color
+	bodyColors.RightLegColor3 = color
+	bodyColors.TorsoColor3 = color
+end
+
+local function applyDescription(humanoid: Humanoid, loadout): boolean
 	local ok, description = pcall(function()
 		return humanoid:GetAppliedDescription()
 	end)
 	if not ok or not description then
 		warn("[BankersOutfits] could not read applied HumanoidDescription; skipping description gear")
-		return
+		return false
 	end
 
 	local configured = loadout.Description or {}
@@ -149,7 +171,9 @@ local function applyDescription(humanoid: Humanoid, loadout)
 	end)
 	if not applyOk then
 		warn(string.format("[BankersOutfits] ApplyDescription failed: %s", tostring(applyErr)))
+		return false
 	end
+	return true
 end
 
 local function addAccessoryAsset(humanoid: Humanoid, rig: Model, slotName: string, assetId: number)
@@ -243,7 +267,8 @@ local function applyLoadout(rig: Model, slotIndex: number)
 	end
 
 	removeRuntimeGear(rig)
-	applyDescription(humanoid, loadout)
+	local descriptionApplied = applyDescription(humanoid, loadout)
+	applyBaseColor(rig, loadout)
 
 	local accessoryCount = 0
 	local gear = loadout.AccessoryAssets or {}
@@ -256,10 +281,11 @@ local function applyLoadout(rig: Model, slotIndex: number)
 
 	freezeRig(rig)
 	print(string.format(
-		"[BankersOutfits] slot %d -> %s (%s), %d runtime accessories",
+		"[BankersOutfits] slot %d -> %s (%s), description %s, %d runtime accessories",
 		slotIndex,
 		rig:GetFullName(),
 		loadout.DisplayName or loadout.Name or "Unnamed",
+		descriptionApplied and "applied" or "failed",
 		accessoryCount
 	))
 end
