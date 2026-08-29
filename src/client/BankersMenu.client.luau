@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
@@ -6,12 +7,11 @@ local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
-local START_MARKER_NAME = "MenuCameraStart"
-local END_MARKER_NAME = "MenuCameraEnd"
 local INTRO_DURATION = 7.0
 local START_FOV = 58
 local END_FOV = 44
 local CAMERA_BIND_NAME = "BankersMenuCamera"
+local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -77,78 +77,21 @@ local function setControlsEnabled(enabled: boolean)
 	end
 end
 
-local function findMarker(name: string): BasePart?
-	local marker = workspace:FindFirstChild(name)
-	if marker and marker:IsA("BasePart") then
-		return marker
-	end
-	return nil
+local configFolder = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, 10)
+if not configFolder then
+	warn("[BankersMenu] replicated camera config missing; menu camera skipped")
+	return
 end
 
-local function findRigCenter(): Vector3
-	local positions = {}
-	for _, descendant in workspace:GetDescendants() do
-		if descendant:IsA("Model") and descendant.Name == "Rig" then
-			local pivot = descendant:GetPivot()
-			table.insert(positions, pivot.Position)
-		end
-	end
-	if #positions == 0 then
-		local bank = workspace:FindFirstChild("Bank")
-		if bank and bank:IsA("Model") then
-			return bank:GetPivot().Position
-		end
-		return Vector3.zero
-	end
-	local total = Vector3.zero
-	for _, position in positions do
-		total += position
-	end
-	return total / #positions
+local startValue = configFolder:WaitForChild("Start", 5)
+local endValue = configFolder:WaitForChild("End", 5)
+if not startValue or not startValue:IsA("CFrameValue") or not endValue or not endValue:IsA("CFrameValue") then
+	warn("[BankersMenu] replicated camera CFrame values missing; menu camera skipped")
+	return
 end
 
-local function createRuntimeMarker(name: string, cframe: CFrame): BasePart
-	local marker = Instance.new("Part")
-	marker.Name = name
-	marker.Size = Vector3.new(2, 2, 2)
-	marker.Anchored = true
-	marker.CanCollide = false
-	marker.CanTouch = false
-	marker.CanQuery = false
-	marker.Transparency = 1
-	marker.CFrame = cframe
-	marker.Parent = workspace
-	return marker
-end
-
-local center = findRigCenter()
-local startMarker = findMarker(START_MARKER_NAME)
-local endMarker = findMarker(END_MARKER_NAME)
-
-if not startMarker then
-	local fallback = CFrame.lookAt(center + Vector3.new(0, 34, 92), center + Vector3.new(0, 8, 0))
-	startMarker = createRuntimeMarker(START_MARKER_NAME, fallback)
-	warn("[BankersMenu] MenuCameraStart missing; using runtime fallback")
-end
-
-if not endMarker then
-	local fallback = CFrame.lookAt(center + Vector3.new(0, 9, 34), center + Vector3.new(0, 4, 0))
-	endMarker = createRuntimeMarker(END_MARKER_NAME, fallback)
-	warn("[BankersMenu] MenuCameraEnd missing; using runtime fallback")
-end
-
-local function hideMarker(marker: BasePart)
-	marker.LocalTransparencyModifier = 1
-end
-
-hideMarker(startMarker)
-hideMarker(endMarker)
-
-workspace.ChildAdded:Connect(function(child)
-	if child:IsA("BasePart") and (child.Name == START_MARKER_NAME or child.Name == END_MARKER_NAME) then
-		child.LocalTransparencyModifier = 1
-	end
-end)
+local cameraStart = startValue.Value
+local cameraEnd = endValue.Value
 
 hideCoreGui()
 hideLocalCharacter()
@@ -265,8 +208,6 @@ accent.BorderSizePixel = 0
 accent.ZIndex = 10
 accent.Parent = playButton
 
-local cameraStart = startMarker.CFrame
-local cameraEnd = endMarker.CFrame
 local introStartedAt = os.clock()
 local introFinished = false
 local menuShown = false
@@ -356,9 +297,6 @@ playButton.MouseEnter:Connect(function()
 	TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 		Size = UDim2.fromOffset(3, 32),
 	}):Play()
-	TweenService:Create(playButton, TweenInfo.new(0.16), {
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-	}):Play()
 end)
 
 playButton.MouseLeave:Connect(function()
@@ -381,4 +319,4 @@ playButton.Activated:Connect(function()
 	print("[BankersMenu] PLAY selected; gameplay-place transition hook is ready")
 end)
 
-print("[BankersMenu] cinematic menu controller ready")
+print("[BankersMenu] cinematic menu controller ready from replicated CFrames")
