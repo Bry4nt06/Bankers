@@ -77,12 +77,29 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 20, fu
 		camera.CFrame = cameraStart:Lerp(cameraEnd, eased)
 		camera.FieldOfView = START_FOV + (END_FOV - START_FOV) * eased
 	else
-		-- Exact final framing. No drift, parallax, look-at recalculation, or offset.
 		camera.CFrame = cameraEnd
 		camera.FieldOfView = END_FOV
+
 		if not finishedLogged then
 			finishedLogged = true
+
+			local positionError = (camera.CFrame.Position - cameraEnd.Position).Magnitude
+			local lookError = (camera.CFrame.LookVector - cameraEnd.LookVector).Magnitude
+
 			print("[BankersCamera] reached exact MenuCameraEnd framing")
+			print(string.format(
+				"[BankersCamera][CLIENT CHECK] live %.3f, %.3f, %.3f | expected %.3f, %.3f, %.3f | position error %.6f | look error %.6f",
+				camera.CFrame.Position.X,
+				camera.CFrame.Position.Y,
+				camera.CFrame.Position.Z,
+				cameraEnd.Position.X,
+				cameraEnd.Position.Y,
+				cameraEnd.Position.Z,
+				positionError,
+				lookError
+			))
+			print("[BankersCamera][CLIENT CHECK] live CFrame:", camera.CFrame)
+			print("[BankersCamera][CLIENT CHECK] expected End CFrame:", cameraEnd)
 		end
 	end
 end)
