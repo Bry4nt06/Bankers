@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local shared = ReplicatedStorage:WaitForChild("BankersGameplay")
 local GetawayConfig = require(shared:WaitForChild("GetawayConfig"))
@@ -17,11 +18,11 @@ local DAMAGE_EVENT_NAME = "DamageGetawayTruck"
 
 local runtime = ReplicatedStorage:FindFirstChild("BankersGetawayRuntime")
 
-local serverEvents = game:GetService("ServerStorage"):FindFirstChild("BankersGameplayEvents")
+local serverEvents = ServerStorage:FindFirstChild("BankersGameplayEvents")
 if not serverEvents then
 	serverEvents = Instance.new("Folder")
 	serverEvents.Name = "BankersGameplayEvents"
-	serverEvents.Parent = game:GetService("ServerStorage")
+	serverEvents.Parent = ServerStorage
 end
 
 local damageEvent = serverEvents:FindFirstChild(DAMAGE_EVENT_NAME)
@@ -29,6 +30,20 @@ if not damageEvent then
 	damageEvent = Instance.new("BindableEvent")
 	damageEvent.Name = DAMAGE_EVENT_NAME
 	damageEvent.Parent = serverEvents
+end
+
+local remotes = ReplicatedStorage:FindFirstChild("BankersGameplayRemotes")
+if not remotes then
+	remotes = Instance.new("Folder")
+	remotes.Name = "BankersGameplayRemotes"
+	remotes.Parent = ReplicatedStorage
+end
+
+local exitRemote = remotes:FindFirstChild("ExitGetawayTruck")
+if not exitRemote then
+	exitRemote = Instance.new("RemoteEvent")
+	exitRemote.Name = "ExitGetawayTruck"
+	exitRemote.Parent = remotes
 end
 
 local truck: Model? = nil
@@ -62,8 +77,6 @@ local function updateNetworkOwner()
 	if not chassis then
 		return
 	end
-	-- Keep motion server authoritative during the PvE chase so checkpoint and
-	-- police-AI interactions see one canonical truck state.
 	pcall(function()
 		chassis:SetNetworkOwner(nil)
 	end)
@@ -83,6 +96,45 @@ local function resetTruck(reason: string?)
 	updateNetworkOwner()
 	print(string.format("[BankersTruck] reset (%s)", reason or "reset"))
 end
+
+local function requestExit(player: Player)
+	if not truck or not chassis then
+		return
+	end
+	local character = player.Character
+	if not character then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not root or not root:IsA("BasePart") then
+		return
+	end
+	local seat = humanoid.SeatPart
+	if not seat or not seat:IsDescendantOf(truck) then
+		return
+	end
+
+	-- Force the seat weld to release on the authoritative server, then place the
+	-- character clear of the truck body so they cannot immediately re-seat.
+	humanoid.Sit = false
+	humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+
+	local sideSign = seat.Name == "RightGunnerSeat" and 1 or -1
+	local exitPosition = chassis.Position + chassis.CFrame.RightVector * (8.5 * sideSign) + Vector3.new(0, 3.5, 0)
+	task.defer(function()
+		if character.Parent and chassis and chassis.Parent then
+			character:PivotTo(CFrame.lookAt(exitPosition, exitPosition + chassis.CFrame.LookVector))
+			local currentRoot = character:FindFirstChild("HumanoidRootPart")
+			if currentRoot and currentRoot:IsA("BasePart") then
+				currentRoot.AssemblyLinearVelocity = chassis.AssemblyLinearVelocity
+			end
+		end
+	end)
+	print(string.format("[BankersTruck] %s exited truck from %s", player.Name, seat.Name))
+end
+
+exitRemote.OnServerEvent:Connect(requestExit)
 
 local function bindTruck(model: Model)
 	if heartbeatConnection then
@@ -148,7 +200,7 @@ local function bindTruck(model: Model)
 		model:SetAttribute("Speed", math.abs(currentForwardSpeed))
 	end)
 
-	print("[BankersTruck] armored getaway truck controller active")
+	print("[BankersTruck] armored getaway truck controller active; E exit enabled")
 end
 
 damageEvent.Event:Connect(function(amount, source)
