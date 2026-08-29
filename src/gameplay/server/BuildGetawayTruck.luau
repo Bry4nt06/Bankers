@@ -5,6 +5,10 @@ local BuildGetawayTruck = {}
 local TRUCK_MODEL_NAME = "GetawayArmoredTruck"
 local GRAYBOX_MODEL_NAME = "GetawayGraybox"
 local START_MARKER_NAME = "ArmoredTruckStart"
+local WORKSPACE_DONOR_NAMES = {
+	"Armored Vehicle",
+	"ArmoredVehicle",
+}
 local DONOR_ASSET_ID = 5144461510
 
 local BODY_COLOR = Color3.fromRGB(47, 50, 54)
@@ -63,22 +67,31 @@ local function makeWheel(parent: Instance, root: BasePart, name: string, offset:
 	return wheel
 end
 
-local function removeUnsafeDonorInstances(root: Instance)
+local function isUnsafeDonorInstance(instance: Instance): boolean
+	return instance:IsA("Script")
+		or instance:IsA("LocalScript")
+		or instance:IsA("ModuleScript")
+		or instance:IsA("RemoteEvent")
+		or instance:IsA("RemoteFunction")
+		or instance:IsA("BindableEvent")
+		or instance:IsA("BindableFunction")
+		or instance:IsA("Seat")
+		or instance:IsA("VehicleSeat")
+		or instance:IsA("Sound")
+		or instance:IsA("BodyMover")
+		or instance:IsA("Constraint")
+		or instance:IsA("JointInstance")
+end
+
+local function sanitizeDonorVisual(root: Instance): number
+	local removed = 0
 	for _, descendant in ipairs(root:GetDescendants()) do
-		if descendant:IsA("Script")
-			or descendant:IsA("LocalScript")
-			or descendant:IsA("ModuleScript")
-			or descendant:IsA("Seat")
-			or descendant:IsA("VehicleSeat")
-			or descendant:IsA("BodyMover")
-			or descendant:IsA("LinearVelocity")
-			or descendant:IsA("AngularVelocity")
-			or descendant:IsA("VectorForce")
-			or descendant:IsA("AlignPosition")
-			or descendant:IsA("AlignOrientation") then
+		if isUnsafeDonorInstance(descendant) then
 			descendant:Destroy()
+			removed += 1
 		end
 	end
+	return removed
 end
 
 local function weldVisualToChassis(visual: Model, chassis: BasePart)
@@ -100,8 +113,6 @@ local function placeDonorByBoundingBox(visual: Model, chassis: BasePart)
 		error("donor vehicle has no measurable geometry")
 	end
 
-	-- Fit the visual into our known armored-truck collision envelope without
-	-- changing the driving physics dimensions.
 	local targetSize = Vector3.new(11.2, 9.2, 22.0)
 	local scale = math.min(
 		targetSize.X / math.max(originalSize.X, 0.01),
@@ -122,7 +133,69 @@ local function placeDonorByBoundingBox(visual: Model, chassis: BasePart)
 	end
 end
 
-local function addDonorVisual(model: Model, chassis: BasePart): boolean
+local function countGeometry(root: Instance): number
+	local count = 0
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			count += 1
+		end
+	end
+	return count
+end
+
+local function findWorkspaceDonor(): Model?
+	for _, name in ipairs(WORKSPACE_DONOR_NAMES) do
+		local candidate = workspace:FindFirstChild(name)
+		if candidate and candidate:IsA("Model") then
+			return candidate
+		end
+	end
+	return nil
+end
+
+local function prepareVisualClone(source: Model, model: Model, chassis: BasePart, label: string): boolean
+	local visual = source:Clone()
+	visual.Name = "DonorVisual"
+	local removed = sanitizeDonorVisual(visual)
+	visual.Parent = model
+
+	local geometryCount = countGeometry(visual)
+	if geometryCount == 0 then
+		visual:Destroy()
+		warn("[BankersTruckBake] donor contained no usable BaseParts")
+		return false
+	end
+
+	local positioned, positionError = pcall(placeDonorByBoundingBox, visual, chassis)
+	if not positioned then
+		visual:Destroy()
+		warn("[BankersTruckBake] donor visual alignment failed: " .. tostring(positionError))
+		return false
+	end
+
+	weldVisualToChassis(visual, chassis)
+	model:SetAttribute("VisualDonorSource", label)
+	model:SetAttribute("VisualDonorRemovedInstances", removed)
+	print(string.format(
+		"[BankersTruckBake] using %s (%d visual parts, %d donor runtime/physics objects stripped)",
+		label,
+		geometryCount,
+		removed
+	))
+	return true
+end
+
+local function addWorkspaceDonorVisual(model: Model, chassis: BasePart): (boolean, Model?)
+	local source = findWorkspaceDonor()
+	if not source then
+		return false, nil
+	end
+
+	local ok = prepareVisualClone(source, model, chassis, "Workspace Armored Vehicle donor")
+	return ok, source
+end
+
+local function addAssetDonorVisual(model: Model, chassis: BasePart): boolean
 	local ok, loadedOrError = pcall(function()
 		return InsertService:LoadAsset(DONOR_ASSET_ID)
 	end)
@@ -137,33 +210,12 @@ local function addDonorVisual(model: Model, chassis: BasePart): boolean
 		return false
 	end
 
-	loaded.Name = "DonorVisual_5144461510"
-	removeUnsafeDonorInstances(loaded)
-	loaded.Parent = model
-
-	local geometryCount = 0
-	for _, descendant in ipairs(loaded:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			geometryCount += 1
-		end
+	local prepared = prepareVisualClone(loaded, model, chassis, string.format("Creator Store asset %d", DONOR_ASSET_ID))
+	loaded:Destroy()
+	if prepared then
+		model:SetAttribute("VisualDonorAssetId", DONOR_ASSET_ID)
 	end
-	if geometryCount == 0 then
-		loaded:Destroy()
-		warn("[BankersTruckBake] donor asset contained no usable BaseParts")
-		return false
-	end
-
-	local positioned, positionError = pcall(placeDonorByBoundingBox, loaded, chassis)
-	if not positioned then
-		loaded:Destroy()
-		warn("[BankersTruckBake] donor visual alignment failed: " .. tostring(positionError))
-		return false
-	end
-
-	weldVisualToChassis(loaded, chassis)
-	model:SetAttribute("VisualDonorAssetId", DONOR_ASSET_ID)
-	print(string.format("[BankersTruckBake] using Creator Store vehicle donor %d (%d visual parts)", DONOR_ASSET_ID, geometryCount))
-	return true
+	return prepared
 end
 
 local function addFallbackVisual(model: Model, chassis: BasePart)
@@ -227,11 +279,19 @@ function BuildGetawayTruck.Run()
 	chassis.CustomPhysicalProperties = PhysicalProperties.new(5, 0.65, 0.15, 1, 1)
 	model.PrimaryPart = chassis
 
-	local donorLoaded = addDonorVisual(model, chassis)
+	local donorLoaded, workspaceDonor = addWorkspaceDonorVisual(model, chassis)
+	if not donorLoaded then
+		donorLoaded = addAssetDonorVisual(model, chassis)
+	end
+
 	if donorLoaded then
 		chassis.Transparency = 1
+		if workspaceDonor and workspaceDonor.Parent then
+			workspaceDonor:Destroy()
+			print("[BankersTruckBake] removed original Armored Vehicle after successful visual conversion")
+		end
 	else
-		warn("[BankersTruckBake] falling back to the simple internal truck visual")
+		warn("[BankersTruckBake] no usable donor available; falling back to the simple internal truck visual")
 		addFallbackVisual(model, chassis)
 	end
 
@@ -280,7 +340,7 @@ function BuildGetawayTruck.Run()
 	chassis.AssemblyLinearVelocity = Vector3.zero
 	chassis.AssemblyAngularVelocity = Vector3.zero
 
-	print("[BankersTruckBake] COMPLETE: getaway truck created with sanitized Creator Store donor when available. Press Ctrl+S to save it into BankersGameplay.rbxl.")
+	print("[BankersTruckBake] COMPLETE: one sanitized Bankers getaway truck created. Press Ctrl+S to save BankersGameplay.rbxl.")
 	return model
 end
 
