@@ -10,14 +10,17 @@
     },
     "ServerScriptService": {
       "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
       "BankersGameplay": {
         "$path": "src/gameplay/server"
       }
     },
     "StarterPlayer": {
       "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": false,
         "BankersGameplay": {
           "$path": "src/gameplay/client"
         }
