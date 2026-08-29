@@ -27,9 +27,6 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$ignoreUnknownInstances": false,
-        "LegacyCameraGuard": {
-          "$path": "src/client/LegacyCameraGuard.client.luau"
-        },
         "BankersMenu": {
           "$path": "src/client/BankersMenu.client.luau"
         },
