@@ -6,6 +6,7 @@ Players.CharacterAutoLoads = false
 local START_MARKER_NAME = "MenuCameraStart"
 local END_MARKER_NAME = "MenuCameraEnd"
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
+local CAMERA_STREAM_SETTLE = 0.20
 
 local function isDisplayVehicleModel(instance: Instance): boolean
 	if not instance:IsA("Model") then
@@ -45,8 +46,8 @@ local function freezePart(part: BasePart)
 end
 
 local function hideCameraMarker(marker: BasePart)
-	-- Runtime-only changes: the marker remains visible in Edit mode after Stop so
-	-- it can still be positioned normally, but it is never rendered in Play.
+	-- Runtime-only changes. In Edit mode the Studio-authored marker stays available
+	-- for framing; in Play it is invisible and non-interactive.
 	marker.Anchored = true
 	marker.Transparency = 1
 	marker.CanCollide = false
@@ -94,8 +95,8 @@ local function freezeDisplayRig(model: Model)
 		elseif descendant:IsA("Tool") then
 			descendant.CanBeDropped = false
 		elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
-			-- Menu rigs are display-only. Disable scripts embedded in weapon/free-model
-			-- props so they cannot unanchor, equip, animate, or drop themselves.
+			-- Menu rigs are display-only. Embedded scripts in weapon/free-model props
+			-- must not equip, animate, unanchor, or drop their parts.
 			descendant.Enabled = false
 		end
 	end
@@ -157,12 +158,16 @@ local function pinReplicationFocus(player: Player)
 		return
 	end
 
-	player.ReplicationFocus = focus
-	print(string.format(
-		"[BankersMenu] replication focus pinned to %s for %s",
-		focus.Name,
-		player.Name
-	))
+	-- Avoid reassigning the same focus. Repeated focus writes during the cinematic
+	-- can force unnecessary streaming work and present as a brief visual hitch.
+	if player.ReplicationFocus ~= focus then
+		player.ReplicationFocus = focus
+		print(string.format(
+			"[BankersMenu] replication focus pinned to %s for %s",
+			focus.Name,
+			player.Name
+		))
+	end
 end
 
 local function refreshReplicationFocusForAllPlayers()
@@ -180,16 +185,37 @@ local function keepPlayerOutOfScene(player: Player)
 		character:Destroy()
 	end)
 
-	task.defer(pinReplicationFocus, player)
+	local config = ReplicatedStorage:FindFirstChild(CONFIG_FOLDER_NAME)
+	if config and config:GetAttribute("Ready") == true then
+		task.defer(pinReplicationFocus, player)
+	end
 end
 
+local publishingCameraConfig = false
+
 local function publishCameraConfig()
+	if publishingCameraConfig then
+		return
+	end
+	publishingCameraConfig = true
+
 	local folder = ReplicatedStorage:FindFirstChild(CONFIG_FOLDER_NAME)
 	if not folder then
 		folder = Instance.new("Folder")
 		folder.Name = CONFIG_FOLDER_NAME
 		folder.Parent = ReplicatedStorage
 	end
+
+	-- Once the authoritative camera config is live, never republish it during the
+	-- same server session. MenuCameraStart/End are Studio framing markers, not a
+	-- live runtime camera source.
+	if folder:GetAttribute("Ready") == true then
+		hideCameraMarkers()
+		publishingCameraConfig = false
+		return
+	end
+
+	folder:SetAttribute("Ready", false)
 
 	local startValue = folder:FindFirstChild("Start")
 	if not startValue then
@@ -222,31 +248,35 @@ local function publishCameraConfig()
 		warn("[BankersMenu] server could not find MenuCameraEnd in Workspace")
 	end
 
-	folder:SetAttribute("Ready", startReady and endReady)
-	refreshReplicationFocusForAllPlayers()
-	hideCameraMarkers()
-	print("[BankersMenu] camera CFrames published; runtime camera markers hidden")
+	if startReady and endReady then
+		-- Establish the no-character streaming focus before exposing Ready to the
+		-- client camera. Give that focus a brief head start so the cinematic begins
+		-- from a stable streamed scene instead of changing focus after it has begun.
+		refreshReplicationFocusForAllPlayers()
+		hideCameraMarkers()
+		task.wait(CAMERA_STREAM_SETTLE)
+		folder:SetAttribute("Ready", true)
+		print("[BankersMenu] camera CFrames published once; replication focus settled; runtime camera markers hidden")
+	else
+		folder:SetAttribute("Ready", false)
+	end
+
+	publishingCameraConfig = false
 end
 
+Players.PlayerAdded:Connect(keepPlayerOutOfScene)
 for _, player in Players:GetPlayers() do
 	keepPlayerOutOfScene(player)
 end
-Players.PlayerAdded:Connect(keepPlayerOutOfScene)
 
 stabilizeScene()
 publishCameraConfig()
 
+-- These repeats only stabilize late-created display geometry. They deliberately
+-- do not touch camera config or replication focus after the cinematic has begun.
 task.delay(0.25, stabilizeScene)
-task.delay(1, function()
-	stabilizeScene()
-	publishCameraConfig()
-end)
-
-task.delay(3, function()
-	stabilizeScene()
-	refreshReplicationFocusForAllPlayers()
-	hideCameraMarkers()
-end)
+task.delay(1, stabilizeScene)
+task.delay(3, stabilizeScene)
 
 workspace.DescendantAdded:Connect(function(descendant)
 	if descendant:IsA("Model") and descendant.Name == "Rig" and descendant:FindFirstChildOfClass("Humanoid") then
@@ -269,8 +299,11 @@ workspace.DescendantAdded:Connect(function(descendant)
 	if descendant:IsA("BasePart") then
 		if descendant.Name == START_MARKER_NAME or descendant.Name == END_MARKER_NAME then
 			task.defer(function()
-				publishCameraConfig()
 				hideCameraMarker(descendant)
+				local config = ReplicatedStorage:FindFirstChild(CONFIG_FOLDER_NAME)
+				if not config or config:GetAttribute("Ready") ~= true then
+					publishCameraConfig()
+				end
 			end)
 			return
 		end
