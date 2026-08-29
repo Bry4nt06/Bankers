@@ -44,6 +44,42 @@ local function freezePart(part: BasePart)
 	part.AssemblyAngularVelocity = Vector3.zero
 end
 
+local function hideCameraMarker(marker: BasePart)
+	-- Runtime-only changes: the marker remains visible in Edit mode after Stop so
+	-- it can still be positioned normally, but it is never rendered in Play.
+	marker.Anchored = true
+	marker.Transparency = 1
+	marker.CanCollide = false
+	marker.CanTouch = false
+	marker.CanQuery = false
+	marker.CastShadow = false
+	marker.AssemblyLinearVelocity = Vector3.zero
+	marker.AssemblyAngularVelocity = Vector3.zero
+
+	for _, descendant in marker:GetDescendants() do
+		if descendant:IsA("Decal") or descendant:IsA("Texture") then
+			descendant.Transparency = 1
+		elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+			descendant.Enabled = false
+		elseif descendant:IsA("BillboardGui") or descendant:IsA("SurfaceGui") then
+			descendant.Enabled = false
+		elseif descendant:IsA("Highlight") then
+			descendant.Enabled = false
+		elseif descendant:IsA("SelectionBox") then
+			descendant.Visible = false
+		end
+	end
+end
+
+local function hideCameraMarkers()
+	for _, markerName in ipairs({START_MARKER_NAME, END_MARKER_NAME}) do
+		local marker = workspace:FindFirstChild(markerName)
+		if marker and marker:IsA("BasePart") then
+			hideCameraMarker(marker)
+		end
+	end
+end
+
 local function freezeDisplayRig(model: Model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -188,7 +224,8 @@ local function publishCameraConfig()
 
 	folder:SetAttribute("Ready", startReady and endReady)
 	refreshReplicationFocusForAllPlayers()
-	print("[BankersMenu] camera CFrames published to ReplicatedStorage")
+	hideCameraMarkers()
+	print("[BankersMenu] camera CFrames published; runtime camera markers hidden")
 end
 
 for _, player in Players:GetPlayers() do
@@ -208,6 +245,7 @@ end)
 task.delay(3, function()
 	stabilizeScene()
 	refreshReplicationFocusForAllPlayers()
+	hideCameraMarkers()
 end)
 
 workspace.DescendantAdded:Connect(function(descendant)
@@ -230,7 +268,10 @@ workspace.DescendantAdded:Connect(function(descendant)
 
 	if descendant:IsA("BasePart") then
 		if descendant.Name == START_MARKER_NAME or descendant.Name == END_MARKER_NAME then
-			task.defer(publishCameraConfig)
+			task.defer(function()
+				publishCameraConfig()
+				hideCameraMarker(descendant)
+			end)
 			return
 		end
 
@@ -241,4 +282,4 @@ workspace.DescendantAdded:Connect(function(descendant)
 	end
 end)
 
-print("[BankersMenu] menu-only scene stabilized; rigs, hand props, and display vehicles locked; player spawning disabled")
+print("[BankersMenu] menu-only scene stabilized; rigs, hand props, display vehicles, and runtime camera markers locked; player spawning disabled")
