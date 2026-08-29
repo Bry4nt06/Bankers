@@ -12,21 +12,15 @@ local BIND_NAME = "BankersCameraAuthority"
 local POSITION_EPSILON = 0.001
 local LOOK_EPSILON = 0.0001
 
--- Broken-inspired menu-camera tuning. Keep these intentionally restrained so
--- the effect reads as cinematic parallax rather than free-look gameplay camera.
-local PARALLAX_X_STUDS = 0.65
-local PARALLAX_Y_STUDS = 0.32
-local PARALLAX_YAW_DEGREES = 1.6
-local PARALLAX_PITCH_DEGREES = 0.75
-local PARALLAX_FOV_DELTA = 0.35
-local POINTER_DEADZONE = 0.035
-local POINTER_RESPONSE = 5.5
-
-local IDLE_SWAY_X_STUDS = 0.055
-local IDLE_SWAY_Y_STUDS = 0.035
-local IDLE_SWAY_YAW_DEGREES = 0.10
-local IDLE_SWAY_PITCH_DEGREES = 0.07
-local IDLE_SWAY_SPEED = 0.42
+-- Menu micro-parallax: the final hero shot stays still until the mouse moves.
+-- These offsets are intentionally small so the menu feels responsive rather
+-- than behaving like a free-look gameplay camera.
+local PARALLAX_X_STUDS = 0.32
+local PARALLAX_Y_STUDS = 0.16
+local PARALLAX_YAW_DEGREES = 0.85
+local PARALLAX_PITCH_DEGREES = 0.42
+local POINTER_DEADZONE = 0.025
+local POINTER_RESPONSE = 7.0
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -117,30 +111,20 @@ local function getNormalizedPointer(): (number, number)
 	return applyDeadzone(x), applyDeadzone(y)
 end
 
-local function buildIdleCamera(elapsed: number, dt: number): (CFrame, number)
+local function buildMouseParallaxCamera(dt: number): CFrame
 	local targetX, targetY = getNormalizedPointer()
 	local response = 1 - math.exp(-POINTER_RESPONSE * math.max(dt, 0))
 	smoothedPointerX += (targetX - smoothedPointerX) * response
 	smoothedPointerY += (targetY - smoothedPointerY) * response
 
-	local idleTime = math.max(0, elapsed - INTRO_DURATION - INTRO_HOLD_DURATION)
-	local swayA = math.sin(idleTime * IDLE_SWAY_SPEED)
-	local swayB = math.cos(idleTime * IDLE_SWAY_SPEED * 0.71)
+	local localX = smoothedPointerX * PARALLAX_X_STUDS
+	local localY = -smoothedPointerY * PARALLAX_Y_STUDS
+	local pitch = math.rad(-smoothedPointerY * PARALLAX_PITCH_DEGREES)
+	local yaw = math.rad(-smoothedPointerX * PARALLAX_YAW_DEGREES)
 
-	local localX = (smoothedPointerX * PARALLAX_X_STUDS) + (swayB * IDLE_SWAY_X_STUDS)
-	local localY = (-smoothedPointerY * PARALLAX_Y_STUDS) + (swayA * IDLE_SWAY_Y_STUDS)
-
-	local pitch = math.rad((-smoothedPointerY * PARALLAX_PITCH_DEGREES) + (swayB * IDLE_SWAY_PITCH_DEGREES))
-	local yaw = math.rad((-smoothedPointerX * PARALLAX_YAW_DEGREES) + (swayA * IDLE_SWAY_YAW_DEGREES))
-
-	local pointerMagnitude = math.clamp(math.sqrt((smoothedPointerX * smoothedPointerX) + (smoothedPointerY * smoothedPointerY)), 0, 1)
-	local fov = END_FOV + (pointerMagnitude * PARALLAX_FOV_DELTA)
-
-	local cframe = cameraEnd
+	return cameraEnd
 		* CFrame.new(localX, localY, 0)
 		* CFrame.Angles(pitch, yaw, 0)
-
-	return cframe, fov
 end
 
 -- If another LocalScript writes CurrentCamera after Bankers does, immediately
@@ -179,19 +163,17 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function(
 		authoritativeCFrame = cameraStart:Lerp(cameraEnd, eased)
 		authoritativeFov = START_FOV + (END_FOV - START_FOV) * eased
 	elseif elapsed < INTRO_DURATION + INTRO_HOLD_DURATION then
-		-- Brief exact hold makes the cinematic arrival feel deliberate before
-		-- transitioning into the menu's mouse-reactive idle camera.
 		authoritativeCFrame = cameraEnd
 		authoritativeFov = END_FOV
 	else
-		authoritativeCFrame, authoritativeFov = buildIdleCamera(elapsed, dt)
+		authoritativeCFrame = buildMouseParallaxCamera(dt)
+		authoritativeFov = END_FOV
 		if not idleLogged then
 			idleLogged = true
-			print("[BankersCamera] Broken-style menu parallax active")
+			print("[BankersCamera] mouse micro-parallax active")
 		end
 	end
 
-	-- Final normal camera write before render.
 	writeCamera(authoritativeCFrame, authoritativeFov)
 
 	if alpha >= 1 and not finishedLogged then
