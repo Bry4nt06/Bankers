@@ -66,8 +66,8 @@ end
 -- Broken's legacy shoulder camera writes Motor6D.C0 every render step. Current
 -- Roblox exposes that target as read-only in this path. Remove only that obsolete
 -- write and retain the remainder of the weapon camera/gun implementation.
-local oldLine = "\t\tself.rootJoint.C0 = CFrame.new(self.rootJoint.C0.Position, self.rootJoint.C0.Position + rotationFix.LookVector.Unit)"
-local replacementLine = "\t\t-- THE TAKE: obsolete rootJoint.C0 mutation disabled for current Roblox runtime"
+local oldStatement = "self.rootJoint.C0 = CFrame.new(self.rootJoint.C0.Position, self.rootJoint.C0.Position + rotationFix.LookVector.Unit)"
+local replacementStatement = "-- THE TAKE: obsolete rootJoint.C0 mutation disabled for current Roblox runtime"
 
 local function patchShoulderCamera(root: Instance)
 	local weaponsSystem = root:FindFirstChild("WeaponsSystem")
@@ -77,11 +77,27 @@ local function patchShoulderCamera(root: Instance)
 		return
 	end
 
-	local source = shoulderCamera.Source
-	local first, last = string.find(source, oldLine, 1, true)
-	if first and last then
-		shoulderCamera.Source = string.sub(source, 1, first - 1) .. replacementLine .. string.sub(source, last + 1)
+	local ok, source = pcall(function()
+		return shoulderCamera.Source
+	end)
+	if not ok then
+		warn("[THE TAKE SANITIZE] unable to read " .. shoulderCamera:GetFullName() .. ".Source")
+		return
+	end
+
+	local first, last = string.find(source, oldStatement, 1, true)
+	if not first or not last then
+		return
+	end
+
+	local replacement = string.sub(source, 1, first - 1) .. replacementStatement .. string.sub(source, last + 1)
+	local writeOk, writeErr = pcall(function()
+		shoulderCamera.Source = replacement
+	end)
+	if writeOk then
 		patchedShoulderCameras += 1
+	else
+		warn("[THE TAKE SANITIZE] unable to patch " .. shoulderCamera:GetFullName() .. ": " .. tostring(writeErr))
 	end
 end
 
