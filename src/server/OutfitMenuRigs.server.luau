@@ -1,4 +1,6 @@
+local AvatarEditorService = game:GetService("AvatarEditorService")
 local InsertService = game:GetService("InsertService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LoadoutConfig = require(script.Parent:WaitForChild("RobberLoadouts"))
 
@@ -10,43 +12,14 @@ local DESCRIPTION_FIELDS = {
 	"Shirt",
 	"Pants",
 	"GraphicTShirt",
-	"HatAccessory",
-	"HairAccessory",
-	"FaceAccessory",
-	"NeckAccessory",
-	"FrontAccessory",
-	"BackAccessory",
-	"WaistAccessory",
-	"ShouldersAccessory",
-	"JacketAccessory",
-	"SweaterAccessory",
-	"ShirtAccessory",
-	"PantsAccessory",
-	"ShortsAccessory",
-	"LeftShoeAccessory",
-	"RightShoeAccessory",
-	"DressSkirtAccessory",
 }
 
-local ACCESSORY_SLOT_ORDER = {
-	"Mask",
-	"Headgear",
-	"PlateCarrier",
-	"Gloves",
-	"Radio",
-	"KneePads",
-	"Bag",
-}
-
-local function isMeaningfulValue(value)
-	if type(value) == "number" then
-		return value > 0
-	end
-	if type(value) == "string" then
-		return value ~= "" and value ~= "0"
-	end
-	return false
+local avatarAssetTypeByValue = {}
+for _, item in Enum.AvatarAssetType:GetEnumItems() do
+	avatarAssetTypeByValue[item.Value] = item
 end
+
+local catalogResolutionCache = {}
 
 local function getRigPosition(rig: Model): Vector3
 	local ok, pivot = pcall(function()
@@ -55,12 +28,6 @@ local function getRigPosition(rig: Model): Vector3
 	if ok then
 		return pivot.Position
 	end
-
-	local root = rig:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
-		return root.Position
-	end
-
 	return Vector3.zero
 end
 
@@ -104,7 +71,6 @@ local function resolveLoadout(rig: Model, slotIndex: number)
 		if byName then
 			return byName
 		end
-		warn(string.format("[BankersOutfits] unknown %s '%s' on %s; using slot %d", ATTRIBUTE_NAME, override, rig:GetFullName(), slotIndex))
 	elseif type(override) == "number" and LOADOUTS[override] then
 		return LOADOUTS[override]
 	end
@@ -115,55 +81,106 @@ local function resolveLoadout(rig: Model, slotIndex: number)
 	return LOADOUTS[((slotIndex - 1) % #LOADOUTS) + 1]
 end
 
-local function removeRuntimeGear(rig: Model)
-	for _, descendant in rig:GetDescendants() do
-		if descendant:IsA("Accessory") and descendant:GetAttribute("BankersRuntimeGear") == true then
-			descendant:Destroy()
+local function resolveCatalogAccessory(assetId: number)
+	local cached = catalogResolutionCache[assetId]
+	if cached ~= nil then
+		return cached ~= false and cached or nil
+	end
+
+	local ok, infoOrError = pcall(function()
+		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+	end)
+	if not ok then
+		warn(string.format("[BankersOutfits] catalog asset %d metadata lookup failed: %s", assetId, tostring(infoOrError)))
+		catalogResolutionCache[assetId] = false
+		return nil
+	end
+
+	local info = infoOrError
+	local avatarAssetType = avatarAssetTypeByValue[info.AssetTypeId]
+	if not avatarAssetType then
+		warn(string.format("[BankersOutfits] catalog asset %d (%s) has unsupported AssetTypeId %s", assetId, tostring(info.Name), tostring(info.AssetTypeId)))
+		catalogResolutionCache[assetId] = false
+		return nil
+	end
+
+	local accessoryType = AvatarEditorService:GetAccessoryType(avatarAssetType)
+	if accessoryType == Enum.AccessoryType.Unknown then
+		warn(string.format("[BankersOutfits] catalog asset %d (%s) is %s, not an avatar accessory", assetId, tostring(info.Name), avatarAssetType.Name))
+		catalogResolutionCache[assetId] = false
+		return nil
+	end
+
+	local resolved = {
+		AssetId = assetId,
+		AccessoryType = accessoryType,
+		Name = info.Name or tostring(assetId),
+		AvatarAssetType = avatarAssetType,
+	}
+	catalogResolutionCache[assetId] = resolved
+	return resolved
+end
+
+local function buildCatalogAccessorySpecs(loadout)
+	local specs = {}
+	local resolvedCount = 0
+	for order, assetId in loadout.CatalogAccessories or {} do
+		if type(assetId) == "number" and assetId > 0 then
+			local resolved = resolveCatalogAccessory(assetId)
+			if resolved then
+				table.insert(specs, {
+					Order = order,
+					AssetId = assetId,
+					AccessoryType = resolved.AccessoryType,
+				})
+				resolvedCount += 1
+				print(string.format(
+					"[BankersOutfits] catalog %d -> %s (%s / %s)",
+					assetId,
+					resolved.Name,
+					resolved.AvatarAssetType.Name,
+					resolved.AccessoryType.Name
+				))
+			end
 		end
 	end
+	return specs, resolvedCount
 end
 
-local function applyBaseColor(rig: Model, loadout)
-	local color = loadout.BaseColor or DEFAULT_BASE_COLOR
-	if typeof(color) ~= "Color3" then
-		color = DEFAULT_BASE_COLOR
-	end
-
-	local bodyColors = rig:FindFirstChildOfClass("BodyColors")
-	if not bodyColors then
-		bodyColors = Instance.new("BodyColors")
-		bodyColors.Name = "BankersBodyColors"
-		bodyColors.Parent = rig
-	end
-
-	bodyColors.HeadColor3 = color
-	bodyColors.LeftArmColor3 = color
-	bodyColors.RightArmColor3 = color
-	bodyColors.LeftLegColor3 = color
-	bodyColors.RightLegColor3 = color
-	bodyColors.TorsoColor3 = color
+local function applyBaseColor(description: HumanoidDescription)
+	description.HeadColor = DEFAULT_BASE_COLOR
+	description.LeftArmColor = DEFAULT_BASE_COLOR
+	description.RightArmColor = DEFAULT_BASE_COLOR
+	description.LeftLegColor = DEFAULT_BASE_COLOR
+	description.RightLegColor = DEFAULT_BASE_COLOR
+	description.TorsoColor = DEFAULT_BASE_COLOR
 end
 
-local function applyDescription(humanoid: Humanoid, loadout): boolean
+local function applyDescription(humanoid: Humanoid, loadout)
 	local ok, description = pcall(function()
 		return humanoid:GetAppliedDescription()
 	end)
 	if not ok or not description then
-		warn("[BankersOutfits] could not read applied HumanoidDescription; skipping description gear")
-		return false
+		warn("[BankersOutfits] could not read applied HumanoidDescription")
+		return false, 0
 	end
 
-	local configured = loadout.Description or {}
+	applyBaseColor(description)
+
 	for _, propertyName in DESCRIPTION_FIELDS do
-		local value = configured[propertyName]
-		if isMeaningfulValue(value) then
-			local setOk, setErr = pcall(function()
-				description[propertyName] = value
-			end)
-			if not setOk then
-				warn(string.format("[BankersOutfits] unable to set HumanoidDescription.%s: %s", propertyName, tostring(setErr)))
-			end
+		local value = (loadout.Description or {})[propertyName]
+		if type(value) == "number" and value > 0 then
+			description[propertyName] = value
 		end
+	end
+
+	local accessorySpecs, resolvedCount = buildCatalogAccessorySpecs(loadout)
+	local setOk, setErr = pcall(function()
+		description:SetAccessories(accessorySpecs, true)
+	end)
+	if not setOk then
+		warn(string.format("[BankersOutfits] SetAccessories failed: %s", tostring(setErr)))
+		return false, 0
 	end
 
 	local applyOk, applyErr = pcall(function()
@@ -171,65 +188,38 @@ local function applyDescription(humanoid: Humanoid, loadout): boolean
 	end)
 	if not applyOk then
 		warn(string.format("[BankersOutfits] ApplyDescription failed: %s", tostring(applyErr)))
-		return false
+		return false, 0
 	end
-	return true
+
+	return true, resolvedCount
 end
 
-local function addAccessoryAsset(humanoid: Humanoid, rig: Model, slotName: string, assetId: number)
-	if type(assetId) ~= "number" or assetId <= 0 then
-		return 0
-	end
-
+local function addGameOwnedAccessory(humanoid: Humanoid, rig: Model, assetId: number)
 	local ok, containerOrError = pcall(function()
 		return InsertService:LoadAsset(assetId)
 	end)
 	if not ok then
-		warn(string.format("[BankersOutfits] %s asset %d failed to load: %s", slotName, assetId, tostring(containerOrError)))
+		warn(string.format("[BankersOutfits] custom accessory %d failed to load: %s", assetId, tostring(containerOrError)))
 		return 0
 	end
 
 	local container = containerOrError
-	local containerIsAccessory = container:IsA("Accessory")
-	local accessories = {}
-	if containerIsAccessory then
-		table.insert(accessories, container)
-	else
-		for _, descendant in container:GetDescendants() do
-			if descendant:IsA("Accessory") then
-				table.insert(accessories, descendant)
-			end
-		end
-	end
-
-	if #accessories == 0 then
-		warn(string.format("[BankersOutfits] %s asset %d did not contain an Accessory", slotName, assetId))
+	local accessory = container:IsA("Accessory") and container or container:FindFirstChildWhichIsA("Accessory", true)
+	if not accessory then
 		container:Destroy()
 		return 0
 	end
 
-	local added = 0
-	for _, accessory in accessories do
-		accessory:SetAttribute("BankersRuntimeGear", true)
-		accessory:SetAttribute("BankersGearSlot", slotName)
-		accessory:SetAttribute("BankersGearAssetId", assetId)
-		accessory.Parent = rig
-		local addOk, addErr = pcall(function()
-			humanoid:AddAccessory(accessory)
-		end)
-		if addOk then
-			added += 1
-		else
-			warn(string.format("[BankersOutfits] could not attach %s asset %d: %s", slotName, assetId, tostring(addErr)))
-			accessory:Destroy()
-		end
-	end
+	accessory:SetAttribute("BankersRuntimeGear", true)
+	accessory.Parent = rig
+	local addOk = pcall(function()
+		humanoid:AddAccessory(accessory)
+	end)
 
-	if not containerIsAccessory then
+	if container ~= accessory then
 		container:Destroy()
 	end
-
-	return added
+	return addOk and 1 or 0
 end
 
 local function freezeRig(rig: Model)
@@ -261,32 +251,25 @@ local function applyLoadout(rig: Model, slotIndex: number)
 	end
 
 	rig:SetAttribute("BankersAppliedLoadout", loadout.Name or tostring(slotIndex))
+	print(string.format("[BankersOutfits] %s rig type: %s", rig:GetFullName(), humanoid.RigType.Name))
 
-	if humanoid.RigType ~= Enum.HumanoidRigType.R15 then
-		warn(string.format("[BankersOutfits] %s is %s; high-detail layered tactical gear works best on R15", rig:GetFullName(), humanoid.RigType.Name))
-	end
-
-	removeRuntimeGear(rig)
-	local descriptionApplied = applyDescription(humanoid, loadout)
-	applyBaseColor(rig, loadout)
-
-	local accessoryCount = 0
-	local gear = loadout.AccessoryAssets or {}
-	for _, slotName in ACCESSORY_SLOT_ORDER do
-		local assetId = gear[slotName]
+	local descriptionApplied, catalogCount = applyDescription(humanoid, loadout)
+	local customCount = 0
+	for _, assetId in loadout.AccessoryAssets or {} do
 		if type(assetId) == "number" and assetId > 0 then
-			accessoryCount += addAccessoryAsset(humanoid, rig, slotName, assetId)
+			customCount += addGameOwnedAccessory(humanoid, rig, assetId)
 		end
 	end
 
 	freezeRig(rig)
 	print(string.format(
-		"[BankersOutfits] slot %d -> %s (%s), description %s, %d runtime accessories",
+		"[BankersOutfits] slot %d -> %s (%s), description=%s, catalog accessories=%d, custom accessories=%d",
 		slotIndex,
 		rig:GetFullName(),
 		loadout.DisplayName or loadout.Name or "Unnamed",
-		descriptionApplied and "applied" or "failed",
-		accessoryCount
+		tostring(descriptionApplied),
+		catalogCount,
+		customCount
 	))
 end
 
@@ -304,9 +287,5 @@ local function outfitAllMenuRigs()
 	print(string.format("[BankersOutfits] tactical menu loadout system ready for %d rigs", #rigs))
 end
 
--- Give Studio-authored rigs a moment to settle before applying descriptions.
 task.wait(0.35)
 outfitAllMenuRigs()
-
--- Re-run once after startup in case a character description or accessory was late to replicate.
-task.delay(2, outfitAllMenuRigs)
