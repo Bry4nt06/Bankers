@@ -35,8 +35,6 @@ local function stabilizeScene()
 		elseif descendant:IsA("Tool") then
 			descendant.CanBeDropped = false
 		elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
-			-- Everything inside TheTakeMenuScene is display-only. Donor gameplay
-			-- scripts live elsewhere and are intentionally untouched.
 			descendant.Enabled = false
 			scripts += 1
 		end
@@ -101,8 +99,13 @@ local function publishCameraConfig(): boolean
 		endValue.Parent = folder
 	end
 
-	(startValue :: CFrameValue).Value = startMarker.CFrame
-	(endValue :: CFrameValue).Value = endMarker.CFrame
+	if not startValue:IsA("CFrameValue") or not endValue:IsA("CFrameValue") then
+		warn("[TheTakeMenu] camera config Start/End instances have the wrong class")
+		return false
+	end
+
+	startValue.Value = startMarker.CFrame
+	endValue.Value = endMarker.CFrame
 	folder:SetAttribute("Ready", true)
 
 	hideMarker(startMarker)
@@ -112,12 +115,14 @@ local function publishCameraConfig(): boolean
 end
 
 -- Camera readiness is the startup critical path. Publish it BEFORE walking the
--- very large display scene so the client can begin the cinematic immediately.
-publishCameraConfig()
+-- large display scene so the client can begin the cinematic immediately.
+local cameraConfigPublished = publishCameraConfig()
+if not cameraConfigPublished then
+	warn("[TheTakeMenu] cinematic camera config was not published")
+end
 
 task.spawn(stabilizeScene)
 
--- Catch late-loaded appearance/prop descendants inside the cinematic model only.
 scene.DescendantAdded:Connect(function(descendant)
 	if descendant:IsA("BasePart") then
 		task.defer(function()
