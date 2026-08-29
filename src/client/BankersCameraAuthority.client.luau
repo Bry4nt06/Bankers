@@ -1,15 +1,20 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
+local player = Players.LocalPlayer
+
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
+local CLIENT_READY_ATTRIBUTE = "BankersCameraClientReady"
 local INTRO_DURATION = 7.0
 local START_FOV = 58
 local END_FOV = 44
 local BIND_NAME = "BankersCameraAuthority"
 local POSITION_EPSILON = 0.001
 local LOOK_EPSILON = 0.0001
+local STREAM_REQUEST_TIMEOUT = 5
 
 -- Final-shot mouse micro-parallax. The mouse position on the exact final frame
 -- becomes the neutral point, eliminating the old post-intro snap/hitch.
@@ -18,6 +23,8 @@ local PARALLAX_Y_STUDS = 0.38
 local PARALLAX_YAW_DEGREES = 1.35
 local PARALLAX_PITCH_DEGREES = 0.68
 local POINTER_RESPONSE = 8.5
+
+player:SetAttribute(CLIENT_READY_ATTRIBUTE, false)
 
 local function getCamera(): Camera?
 	local camera = workspace.CurrentCamera
@@ -69,6 +76,41 @@ print(string.format(
 	cameraEnd.Position.Y,
 	cameraEnd.Position.Z
 ))
+
+local function requestStreamAround(position: Vector3, label: string): boolean
+	if not workspace.StreamingEnabled then
+		return true
+	end
+
+	local ok, err = pcall(function()
+		player:RequestStreamAroundAsync(position, STREAM_REQUEST_TIMEOUT)
+	end)
+
+	if ok then
+		print(string.format("[BankersCamera] client stream ready around %s", label))
+		return true
+	end
+
+	warn(string.format("[BankersCamera] stream request around %s failed: %s", label, tostring(err)))
+	return false
+end
+
+local function primeMenuSceneStreaming()
+	if not workspace.StreamingEnabled then
+		print("[BankersCamera] Workspace streaming disabled; explicit stream priming not required")
+		return
+	end
+
+	local midpoint = cameraStart:Lerp(cameraEnd, 0.5).Position
+	requestStreamAround(cameraStart.Position, "MenuCameraStart")
+	requestStreamAround(midpoint, "camera midpoint")
+	requestStreamAround(cameraEnd.Position, "MenuCameraEnd")
+end
+
+-- Do not start the cinematic timer until the client has explicitly requested
+-- the entire short menu-camera route. ReplicationFocus remains the persistent
+-- server-side focus; these requests eliminate the intermittent first-frame race.
+primeMenuSceneStreaming()
 
 local authoritativeCFrame = cameraStart
 local authoritativeFov = START_FOV
@@ -158,6 +200,13 @@ UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 UserInputService.MouseIconEnabled = true
 
 writeCamera(cameraStart, START_FOV)
+
+-- Give the scripted camera one rendered frame at the fully streamed start shot
+-- before the UI is allowed to lift the startup blackout.
+RunService.RenderStepped:Wait()
+writeCamera(cameraStart, START_FOV)
+player:SetAttribute(CLIENT_READY_ATTRIBUTE, true)
+print("[BankersCamera] client camera ready; menu blackout may release")
 
 local startedAt = os.clock()
 
