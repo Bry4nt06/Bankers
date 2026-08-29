@@ -2,38 +2,9 @@
   "name": "THE TAKE",
   "tree": {
     "$className": "DataModel",
-    "Workspace": {
-      "$className": "Workspace",
-      "$ignoreUnknownInstances": true,
-      "AudioScript": {
-        "$className": "Script",
-        "$ignoreUnknownInstances": true,
-        "$properties": {
-          "Enabled": false
-        }
-      }
-    },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
-      "Main": {
-        "$className": "Folder",
-        "$ignoreUnknownInstances": true,
-        "Inventory": {
-          "$className": "Script",
-          "$ignoreUnknownInstances": true,
-          "$properties": {
-            "Enabled": false
-          }
-        },
-        "TimePlayed": {
-          "$className": "Script",
-          "$ignoreUnknownInstances": true,
-          "$properties": {
-            "Enabled": false
-          }
-        }
-      },
       "TheTake": {
         "$path": "src/thetake/server"
       }
