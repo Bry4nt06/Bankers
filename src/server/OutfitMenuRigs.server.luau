@@ -250,6 +250,17 @@ local function applyLoadout(rig: Model, slotIndex: number)
 		return
 	end
 
+	if rig:GetAttribute("BankersOutfitBaked") == true then
+		freezeRig(rig)
+		print(string.format(
+			"[BankersOutfits] slot %d -> %s (%s), using baked Edit-mode appearance",
+			slotIndex,
+			rig:GetFullName(),
+			loadout.DisplayName or loadout.Name or "Unnamed"
+		))
+		return
+	end
+
 	rig:SetAttribute("BankersAppliedLoadout", loadout.Name or tostring(slotIndex))
 	print(string.format("[BankersOutfits] %s rig type: %s", rig:GetFullName(), humanoid.RigType.Name))
 
