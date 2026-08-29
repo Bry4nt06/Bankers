@@ -1,0 +1,4 @@
+*.rbxl filter=lfs diff=lfs merge=lfs -text
+*.rbxlx filter=lfs diff=lfs merge=lfs -text
+*.rbxm filter=lfs diff=lfs merge=lfs -text
+*.rbxmx filter=lfs diff=lfs merge=lfs -text
