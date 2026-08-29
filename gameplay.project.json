@@ -1,0 +1,27 @@
+{
+  "name": "Bankers Gameplay",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "BankersGameplay": {
+        "$path": "src/gameplay/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "BankersGameplay": {
+        "$path": "src/gameplay/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "BankersGameplay": {
+          "$path": "src/gameplay/client"
+        }
+      }
+    }
+  }
+}
