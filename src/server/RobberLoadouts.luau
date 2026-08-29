@@ -4,12 +4,15 @@ local RobberLoadouts = {}
 -- to a Workspace Rig and set it to one of the loadout names below.
 RobberLoadouts.AttributeName = "BankersLoadout"
 
--- Dark base layer so uncovered R15 body sections do not remain mannequin-gray.
+-- Dark base layer so uncovered body sections do not remain mannequin-gray.
 RobberLoadouts.DefaultBaseColor = Color3.fromRGB(31, 32, 35)
 
--- First-pass catalog set. These are intentionally centralized so we can swap
--- individual pieces without touching the outfitting logic.
+-- Catalog accessories are intentionally stored as plain asset IDs. The outfit
+-- service resolves each asset's real Roblox AvatarAssetType at runtime and maps
+-- it to the correct AccessoryType before applying the HumanoidDescription.
+-- This avoids brittle guesses such as forcing a plate carrier into FrontAccessory.
 --
+-- Current first-pass tactical set:
 -- 8029037582      Black Balaclava Mask
 -- 11625241138     Black Balaclava Mask (alternate)
 -- 13767886091     Black Balaclava Fireproof
@@ -25,9 +28,6 @@ RobberLoadouts.DefaultBaseColor = Color3.fromRGB(31, 32, 35)
 -- 13612166113     Black Military Duffel Bag
 -- 15554854767     Black Beanie
 
--- HumanoidDescription accessory properties use comma-separated catalog asset IDs.
--- AccessoryAssets remains available for game-owned/custom accessory assets loaded
--- directly through InsertService.
 RobberLoadouts.Loadouts = {
 	{
 		Name = "CrewLeader",
@@ -36,26 +36,13 @@ RobberLoadouts.Loadouts = {
 			Shirt = 0,
 			Pants = 0,
 			GraphicTShirt = 0,
-			HatAccessory = "4036737464",
-			FaceAccessory = "8029037582",
-			FrontAccessory = "14121776793",
-			BackAccessory = "",
-			WaistAccessory = "",
-			JacketAccessory = "",
-			ShirtAccessory = "",
-			PantsAccessory = "",
-			LeftShoeAccessory = "",
-			RightShoeAccessory = "",
 		},
-		AccessoryAssets = {
-			Mask = 0,
-			Headgear = 0,
-			PlateCarrier = 0,
-			Gloves = 0,
-			Radio = 0,
-			KneePads = 0,
-			Bag = 0,
+		CatalogAccessories = {
+			4036737464,
+			8029037582,
+			14121776793,
 		},
+		AccessoryAssets = {},
 	},
 	{
 		Name = "Breacher",
@@ -64,26 +51,12 @@ RobberLoadouts.Loadouts = {
 			Shirt = 0,
 			Pants = 0,
 			GraphicTShirt = 0,
-			HatAccessory = "108580204164661",
-			FaceAccessory = "",
-			FrontAccessory = "18760009752",
-			BackAccessory = "",
-			WaistAccessory = "",
-			JacketAccessory = "",
-			ShirtAccessory = "",
-			PantsAccessory = "",
-			LeftShoeAccessory = "",
-			RightShoeAccessory = "",
 		},
-		AccessoryAssets = {
-			Mask = 0,
-			Headgear = 0,
-			PlateCarrier = 0,
-			Gloves = 0,
-			Radio = 0,
-			KneePads = 0,
-			Bag = 0,
+		CatalogAccessories = {
+			108580204164661,
+			18760009752,
 		},
+		AccessoryAssets = {},
 	},
 	{
 		Name = "Bagman",
@@ -92,26 +65,13 @@ RobberLoadouts.Loadouts = {
 			Shirt = 0,
 			Pants = 0,
 			GraphicTShirt = 0,
-			HatAccessory = "",
-			FaceAccessory = "11625241138",
-			FrontAccessory = "7436118586",
-			BackAccessory = "13612166113",
-			WaistAccessory = "",
-			JacketAccessory = "",
-			ShirtAccessory = "",
-			PantsAccessory = "",
-			LeftShoeAccessory = "",
-			RightShoeAccessory = "",
 		},
-		AccessoryAssets = {
-			Mask = 0,
-			Headgear = 0,
-			PlateCarrier = 0,
-			Gloves = 0,
-			Radio = 0,
-			KneePads = 0,
-			Bag = 0,
+		CatalogAccessories = {
+			11625241138,
+			7436118586,
+			13612166113,
 		},
+		AccessoryAssets = {},
 	},
 	{
 		Name = "Lookout",
@@ -120,26 +80,13 @@ RobberLoadouts.Loadouts = {
 			Shirt = 0,
 			Pants = 0,
 			GraphicTShirt = 0,
-			HatAccessory = "15554854767",
-			FaceAccessory = "135255866303272",
-			FrontAccessory = "10313042102",
-			BackAccessory = "",
-			WaistAccessory = "",
-			JacketAccessory = "",
-			ShirtAccessory = "",
-			PantsAccessory = "",
-			LeftShoeAccessory = "",
-			RightShoeAccessory = "",
 		},
-		AccessoryAssets = {
-			Mask = 0,
-			Headgear = 0,
-			PlateCarrier = 0,
-			Gloves = 0,
-			Radio = 0,
-			KneePads = 0,
-			Bag = 0,
+		CatalogAccessories = {
+			15554854767,
+			135255866303272,
+			10313042102,
 		},
+		AccessoryAssets = {},
 	},
 	{
 		Name = "Driver",
@@ -148,26 +95,13 @@ RobberLoadouts.Loadouts = {
 			Shirt = 0,
 			Pants = 0,
 			GraphicTShirt = 0,
-			HatAccessory = "4036737464",
-			FaceAccessory = "13767886091",
-			FrontAccessory = "14976131187",
-			BackAccessory = "",
-			WaistAccessory = "",
-			JacketAccessory = "",
-			ShirtAccessory = "",
-			PantsAccessory = "",
-			LeftShoeAccessory = "",
-			RightShoeAccessory = "",
 		},
-		AccessoryAssets = {
-			Mask = 0,
-			Headgear = 0,
-			PlateCarrier = 0,
-			Gloves = 0,
-			Radio = 0,
-			KneePads = 0,
-			Bag = 0,
+		CatalogAccessories = {
+			4036737464,
+			13767886091,
+			14976131187,
 		},
+		AccessoryAssets = {},
 	},
 }
 
