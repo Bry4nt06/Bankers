@@ -166,8 +166,9 @@ local function addAccessoryAsset(humanoid: Humanoid, rig: Model, slotName: strin
 	end
 
 	local container = containerOrError
+	local containerIsAccessory = container:IsA("Accessory")
 	local accessories = {}
-	if container:IsA("Accessory") then
+	if containerIsAccessory then
 		table.insert(accessories, container)
 	else
 		for _, descendant in container:GetDescendants() do
@@ -200,7 +201,7 @@ local function addAccessoryAsset(humanoid: Humanoid, rig: Model, slotName: strin
 		end
 	end
 
-	if container.Parent then
+	if not containerIsAccessory then
 		container:Destroy()
 	end
 
