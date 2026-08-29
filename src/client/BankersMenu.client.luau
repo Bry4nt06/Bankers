@@ -1,32 +1,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
-local INTRO_DURATION = 7.0
-local START_FOV = 58
-local END_FOV = 44
-local CAMERA_BIND_NAME = "BankersMenuCamera"
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
-
-local function getCamera(): Camera?
-	local camera = workspace.CurrentCamera
-	if camera then
-		return camera
-	end
-	workspace:GetPropertyChangedSignal("CurrentCamera"):Wait()
-	return workspace.CurrentCamera
-end
-
-local camera = getCamera()
-if not camera then
-	warn("[BankersMenu] CurrentCamera unavailable; menu camera skipped")
-	return
-end
+local MENU_REVEAL_DELAY = 4.75
 
 local function hideCoreGui()
 	for _, coreType in ipairs({
@@ -79,19 +60,21 @@ end
 
 local configFolder = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, 10)
 if not configFolder then
-	warn("[BankersMenu] replicated camera config missing; menu camera skipped")
+	warn("[BankersMenu] replicated camera config missing; UI skipped")
 	return
 end
 
-local startValue = configFolder:WaitForChild("Start", 5)
-local endValue = configFolder:WaitForChild("End", 5)
-if not startValue or not startValue:IsA("CFrameValue") or not endValue or not endValue:IsA("CFrameValue") then
-	warn("[BankersMenu] replicated camera CFrame values missing; menu camera skipped")
-	return
+if configFolder:GetAttribute("Ready") ~= true then
+	local deadline = os.clock() + 10
+	while configFolder:GetAttribute("Ready") ~= true and os.clock() < deadline do
+		configFolder:GetAttributeChangedSignal("Ready"):Wait()
+	end
 end
 
-local cameraStart = startValue.Value
-local cameraEnd = endValue.Value
+if configFolder:GetAttribute("Ready") ~= true then
+	warn("[BankersMenu] camera config never became ready; UI skipped")
+	return
+end
 
 hideCoreGui()
 hideLocalCharacter()
@@ -103,13 +86,19 @@ end)
 
 UserInputService.MouseIconEnabled = true
 
+local playerGui = player:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("BankersMenuGui")
+if oldGui then
+	oldGui:Destroy()
+end
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "BankersMenuGui"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 1500
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.Parent = playerGui
 
 local fade = Instance.new("Frame")
 fade.Name = "Fade"
@@ -208,19 +197,8 @@ accent.BorderSizePixel = 0
 accent.ZIndex = 10
 accent.Parent = playButton
 
-local introStartedAt = os.clock()
-local introFinished = false
 local menuShown = false
 local playSelected = false
-local parallax = Vector2.zero
-
-camera.CameraType = Enum.CameraType.Scriptable
-camera.CFrame = cameraStart
-camera.FieldOfView = START_FOV
-
-TweenService:Create(fade, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-	BackgroundTransparency = 1,
-}):Play()
 
 local function showMenu()
 	if menuShown then
@@ -238,60 +216,11 @@ local function showMenu()
 	}):Play()
 end
 
-local function getMouseParallax(): Vector2
-	local viewport = camera.ViewportSize
-	if viewport.X <= 0 or viewport.Y <= 0 then
-		return Vector2.zero
-	end
-	local mouse = UserInputService:GetMouseLocation()
-	local normalized = Vector2.new(
-		(mouse.X / viewport.X - 0.5) * 2,
-		(mouse.Y / viewport.Y - 0.5) * 2
-	)
-	return Vector2.new(math.clamp(normalized.X, -1, 1), math.clamp(normalized.Y, -1, 1))
-end
+TweenService:Create(fade, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	BackgroundTransparency = 1,
+}):Play()
 
-RunService:BindToRenderStep(CAMERA_BIND_NAME, Enum.RenderPriority.Camera.Value + 1, function(dt)
-	if playSelected then
-		return
-	end
-
-	local elapsed = os.clock() - introStartedAt
-	local alpha = math.clamp(elapsed / INTRO_DURATION, 0, 1)
-	local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
-
-	if not introFinished then
-		camera.CFrame = cameraStart:Lerp(cameraEnd, eased)
-		camera.FieldOfView = START_FOV + (END_FOV - START_FOV) * eased
-		if alpha >= 0.68 then
-			showMenu()
-		end
-		if alpha >= 1 then
-			introFinished = true
-		end
-		return
-	end
-
-	local targetParallax = getMouseParallax()
-	local smoothing = 1 - math.exp(-dt * 4.2)
-	parallax = parallax:Lerp(targetParallax, smoothing)
-
-	local now = os.clock()
-	local swayX = math.sin(now * 0.38) * 0.11
-	local swayY = math.sin(now * 0.29 + 0.8) * 0.07
-	local translation = CFrame.new(
-		parallax.X * 0.16 + swayX,
-		-parallax.Y * 0.10 + swayY,
-		0
-	)
-	local rotation = CFrame.Angles(
-		math.rad(parallax.Y * 0.65),
-		math.rad(-parallax.X * 1.0),
-		0
-	)
-	camera.CFrame = cameraEnd * translation * rotation
-	camera.FieldOfView = END_FOV
-end)
+task.delay(MENU_REVEAL_DELAY, showMenu)
 
 playButton.MouseEnter:Connect(function()
 	TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -315,8 +244,7 @@ playButton.Activated:Connect(function()
 		BackgroundTransparency = 0,
 	}):Play()
 	task.wait(0.6)
-	RunService:UnbindFromRenderStep(CAMERA_BIND_NAME)
 	print("[BankersMenu] PLAY selected; gameplay-place transition hook is ready")
 end)
 
-print("[BankersMenu] cinematic menu controller ready from replicated CFrames")
+print("[BankersMenu] UI-only controller ready; BankersCameraAuthority owns CurrentCamera")
