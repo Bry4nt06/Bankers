@@ -7,23 +7,56 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $sourceUrl = "https://raw.githubusercontent.com/dwmk/RobloxGames/main/BrokenPVPgame_20240713_01.rbxl"
 $targetPath = Join-Path $repoRoot "BankersPvPBrokenBase.rbxl"
-$expectedGitBlobSha = "455079b30c13fd5037f049ee83a3a8b90cd5e1e9"
+
+# GitHub's contents metadata for this large binary reports blob
+# 455079b30c13fd5037f049ee83a3a8b90cd5e1e9, but the actual bytes served by
+# raw.githubusercontent.com hash to the value below. Bankers installs the raw
+# representation, so verification must pin the representation we actually use.
+$upstreamMetadataBlobSha = "455079b30c13fd5037f049ee83a3a8b90cd5e1e9"
+$expectedRawGitBlobSha = "2f5759dd5bcc23dc8e3d006c95543f1e051f77ed"
 $expectedSize = 13471087
 $tempPath = Join-Path $env:TEMP "Bankers-BrokenPVPgame_20240713_01.rbxl"
 
+function Get-GitBlobSha([string]$Path) {
+    $value = (& git hash-object -- $Path).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($value)) {
+        throw "git hash-object failed while verifying '$Path'."
+    }
+    return $value
+}
+
+function Assert-BrokenSnapshot([string]$Path) {
+    if (-not (Test-Path $Path)) {
+        throw "Broken donor snapshot was not found at '$Path'."
+    }
+
+    $size = (Get-Item $Path).Length
+    if ($size -ne $expectedSize) {
+        throw "Broken donor size mismatch. Expected $expectedSize bytes, got $size."
+    }
+
+    $blobSha = Get-GitBlobSha $Path
+    if ($blobSha -ne $expectedRawGitBlobSha) {
+        throw "Broken donor verification failed. Expected raw Git blob $expectedRawGitBlobSha, got $blobSha."
+    }
+
+    return $blobSha
+}
+
 Write-Host "[BankersBrokenBootstrap] source: $sourceUrl"
 Write-Host "[BankersBrokenBootstrap] target: $targetPath"
+Write-Host "[BankersBrokenBootstrap] upstream metadata blob: $upstreamMetadataBlobSha"
+Write-Host "[BankersBrokenBootstrap] pinned raw blob: $expectedRawGitBlobSha"
 
 if ((Test-Path $targetPath) -and -not $Force) {
-    $existingSize = (Get-Item $targetPath).Length
-    if ($existingSize -eq $expectedSize) {
-        $existingBlob = (& git hash-object -- $targetPath).Trim()
-        if ($LASTEXITCODE -eq 0 -and $existingBlob -eq $expectedGitBlobSha) {
-            Write-Host "[BankersBrokenBootstrap] donor already installed and verified."
-            exit 0
-        }
+    try {
+        $existingBlob = Assert-BrokenSnapshot $targetPath
+        Write-Host "[BankersBrokenBootstrap] donor already installed and verified: $existingBlob"
+        exit 0
     }
-    throw "BankersPvPBrokenBase.rbxl already exists but does not match the pinned Broken snapshot. Re-run with -Force to replace it."
+    catch {
+        throw "BankersPvPBrokenBase.rbxl already exists but does not match the pinned Broken raw snapshot. Re-run with -Force to replace it. Details: $($_.Exception.Message)"
+    }
 }
 
 if (Test-Path $tempPath) {
@@ -33,20 +66,12 @@ if (Test-Path $tempPath) {
 Write-Host "[BankersBrokenBootstrap] downloading pinned Broken PvP snapshot..."
 Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing
 
-$downloadedSize = (Get-Item $tempPath).Length
-if ($downloadedSize -ne $expectedSize) {
-    Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
-    throw "Downloaded donor size mismatch. Expected $expectedSize bytes, got $downloadedSize."
+try {
+    $blobSha = Assert-BrokenSnapshot $tempPath
 }
-
-$blobSha = (& git hash-object -- $tempPath).Trim()
-if ($LASTEXITCODE -ne 0) {
+catch {
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
-    throw "git hash-object failed while verifying the Broken donor."
-}
-if ($blobSha -ne $expectedGitBlobSha) {
-    Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
-    throw "Broken donor verification failed. Expected Git blob $expectedGitBlobSha, got $blobSha."
+    throw
 }
 
 if ((Test-Path $targetPath) -and $Force) {
@@ -56,7 +81,8 @@ Move-Item $tempPath $targetPath
 
 Write-Host ""
 Write-Host "[BankersBrokenBootstrap] COMPLETE"
-Write-Host "[BankersBrokenBootstrap] verified Git blob: $blobSha"
+Write-Host "[BankersBrokenBootstrap] verified raw Git blob: $blobSha"
+Write-Host "[BankersBrokenBootstrap] verified size: $expectedSize bytes"
 Write-Host "[BankersBrokenBootstrap] installed: $targetPath"
 Write-Host ""
 Write-Host "Open BankersPvPBrokenBase.rbxl directly in Roblox Studio."
