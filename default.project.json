@@ -5,6 +5,9 @@
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
+      "LegacyCleanup": {
+        "$path": "src/server/LegacyCleanup.server.luau"
+      },
       "MenuScene": {
         "$path": "src/server/MenuScene.server.luau"
       }
@@ -15,6 +18,9 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$ignoreUnknownInstances": true,
+        "LegacyCameraGuard": {
+          "$path": "src/client/LegacyCameraGuard.client.luau"
+        },
         "BankersMenu": {
           "$path": "src/client/BankersMenu.client.luau"
         }
