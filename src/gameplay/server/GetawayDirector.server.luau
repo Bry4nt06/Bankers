@@ -74,6 +74,36 @@ local function getCrewPlayerFromHit(hit: BasePart): Player?
 	return player
 end
 
+local function isTruckHit(hit: BasePart): boolean
+	local current: Instance? = hit
+	while current and current ~= workspace do
+		if current:IsA("Model") and current.Name == GetawayConfig.TruckModelName then
+			return true
+		end
+		current = current.Parent
+	end
+	return false
+end
+
+local function getTriggerActor(hit: BasePart): (boolean, string)
+	if isTruckHit(hit) then
+		return true, "ARMORED TRUCK"
+	end
+
+	-- Before the truck is baked, allowing a Crew player through the route keeps
+	-- graybox testing possible. Once the truck exists, route progression belongs
+	-- to the vehicle itself and players cannot shortcut checkpoints on foot.
+	if workspace:FindFirstChild(GetawayConfig.TruckModelName) then
+		return false, ""
+	end
+
+	local player = getCrewPlayerFromHit(hit)
+	if player then
+		return true, player.Name
+	end
+	return false, ""
+end
+
 local function resetMission(reason: string?)
 	countdownGeneration += 1
 	resultsGeneration += 1
@@ -103,7 +133,7 @@ local function completeMission(reason: string)
 	scheduleResultsReset()
 end
 
-local function handleCheckpoint(sequence: number, player: Player)
+local function handleCheckpoint(sequence: number, actorLabel: string)
 	local current = runtime:GetAttribute("CurrentCheckpoint")
 	if type(current) ~= "number" then
 		current = 0
@@ -113,7 +143,7 @@ local function handleCheckpoint(sequence: number, player: Player)
 	end
 
 	runtime:SetAttribute("CurrentCheckpoint", sequence)
-	print(string.format("[BankersGetaway] %s cleared checkpoint %d", player.Name, sequence))
+	print(string.format("[BankersGetaway] %s cleared checkpoint %d", actorLabel, sequence))
 
 	local phase = runtime:GetAttribute("Phase")
 	if phase == "Ready" then
@@ -143,9 +173,9 @@ local function connectCheckpoint(part: BasePart)
 	end
 
 	part.Touched:Connect(function(hit)
-		local player = getCrewPlayerFromHit(hit)
-		if player then
-			handleCheckpoint(sequence, player)
+		local accepted, actorLabel = getTriggerActor(hit)
+		if accepted then
+			handleCheckpoint(sequence, actorLabel)
 		end
 	end)
 end
@@ -157,9 +187,9 @@ local function connectExtraction(part: BasePart)
 	extractionConnected = true
 
 	part.Touched:Connect(function(hit)
-		local player = getCrewPlayerFromHit(hit)
-		if player and runtime:GetAttribute("Phase") == "Escape" then
-			completeMission("crew reached extraction")
+		local accepted, actorLabel = getTriggerActor(hit)
+		if accepted and runtime:GetAttribute("Phase") == "Escape" then
+			completeMission(actorLabel .. " reached extraction")
 		end
 	end)
 end
