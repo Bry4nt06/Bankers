@@ -6,7 +6,7 @@ local StarterGui = game:GetService("StarterGui")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local removedSounds = 0
+local silencedSounds = 0
 local disabledSceneScripts = 0
 local removedPresentation = 0
 local patchedShoulderCameras = 0
@@ -44,11 +44,17 @@ if scene then
 	end
 end
 
--- Strip all donor audio for now. Owned THE TAKE audio can be added back later.
+-- Mute all donor audio for now while preserving the Sound instances themselves.
+-- Weapon code can still call :Play() without losing its expected object path.
 for _, descendant in ipairs(game:GetDescendants()) do
 	if descendant:IsA("Sound") then
-		descendant:Destroy()
-		removedSounds += 1
+		pcall(function()
+			descendant:Stop()
+		end)
+		descendant.SoundId = ""
+		descendant.Volume = 0
+		descendant.Looped = false
+		silencedSounds += 1
 	end
 end
 
@@ -105,9 +111,9 @@ patchShoulderCamera(ReplicatedStorage)
 patchShoulderCamera(ServerScriptService)
 
 print(string.format(
-	"[THE TAKE SANITIZE] complete | presentation=%d | sceneScriptsDisabled=%d | soundsRemoved=%d | shoulderCameraPatched=%d",
+	"[THE TAKE SANITIZE] complete | presentation=%d | sceneScriptsDisabled=%d | soundsSilenced=%d | shoulderCameraPatched=%d",
 	removedPresentation,
 	disabledSceneScripts,
-	removedSounds,
+	silencedSounds,
 	patchedShoulderCameras
 ))
