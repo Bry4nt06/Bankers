@@ -14,6 +14,9 @@
       "RobberLoadouts": {
         "$path": "src/server/RobberLoadouts.luau"
       },
+      "BakeMenuOutfits": {
+        "$path": "src/server/BakeMenuOutfits.luau"
+      },
       "OutfitMenuRigs": {
         "$path": "src/server/OutfitMenuRigs.server.luau"
       }
