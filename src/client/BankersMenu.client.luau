@@ -58,9 +58,38 @@ local function setControlsEnabled(enabled: boolean)
 	end
 end
 
+-- Create the blackout before waiting for any replicated camera state. Previously
+-- Bankers waited for BankersMenuCameraConfig first, which allowed Roblox's default
+-- empty-world/sky camera to leak onto screen for several seconds during startup.
+local playerGui = player:WaitForChild("PlayerGui")
+local oldBootGui = playerGui:FindFirstChild("BankersBootGui")
+if oldBootGui then
+	oldBootGui:Destroy()
+end
+
+local bootGui = Instance.new("ScreenGui")
+bootGui.Name = "BankersBootGui"
+bootGui.IgnoreGuiInset = true
+bootGui.ResetOnSpawn = false
+bootGui.DisplayOrder = 10000
+bootGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+bootGui.Parent = playerGui
+
+local bootBlackout = Instance.new("Frame")
+bootBlackout.Name = "Blackout"
+bootBlackout.Size = UDim2.fromScale(1, 1)
+bootBlackout.BackgroundColor3 = Color3.new(0, 0, 0)
+bootBlackout.BackgroundTransparency = 0
+bootBlackout.BorderSizePixel = 0
+bootBlackout.ZIndex = 10000
+bootBlackout.Parent = bootGui
+
+print("[BankersMenu] startup blackout active before camera config wait")
+
 local configFolder = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, 10)
 if not configFolder then
 	warn("[BankersMenu] replicated camera config missing; UI skipped")
+	bootGui:Destroy()
 	return
 end
 
@@ -73,6 +102,7 @@ end
 
 if configFolder:GetAttribute("Ready") ~= true then
 	warn("[BankersMenu] camera config never became ready; UI skipped")
+	bootGui:Destroy()
 	return
 end
 
@@ -86,7 +116,6 @@ end)
 
 UserInputService.MouseIconEnabled = true
 
-local playerGui = player:WaitForChild("PlayerGui")
 local oldGui = playerGui:FindFirstChild("BankersMenuGui")
 if oldGui then
 	oldGui:Destroy()
@@ -215,6 +244,11 @@ local function showMenu()
 		TextTransparency = 0,
 	}):Play()
 end
+
+-- The real Bankers fade is now fully opaque, so it can safely replace the
+-- temporary boot mask without exposing a single frame of the default sky.
+bootGui:Destroy()
+print("[BankersMenu] startup blackout handed off to cinematic fade")
 
 TweenService:Create(fade, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 	BackgroundTransparency = 1,
