@@ -7,7 +7,9 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
 local CONFIG_FOLDER_NAME = "BankersMenuCameraConfig"
+local CLIENT_READY_ATTRIBUTE = "BankersCameraClientReady"
 local MENU_REVEAL_DELAY = 4.75
+local CLIENT_CAMERA_READY_TIMEOUT = 20
 
 local function hideCoreGui()
 	for _, coreType in ipairs({
@@ -58,9 +60,35 @@ local function setControlsEnabled(enabled: boolean)
 	end
 end
 
--- Create the blackout before waiting for any replicated camera state. Previously
--- Bankers waited for BankersMenuCameraConfig first, which allowed Roblox's default
--- empty-world/sky camera to leak onto screen for several seconds during startup.
+local function waitForClientCameraReady(): boolean
+	if player:GetAttribute(CLIENT_READY_ATTRIBUTE) == true then
+		return true
+	end
+
+	local ready = false
+	local connection
+	connection = player:GetAttributeChangedSignal(CLIENT_READY_ATTRIBUTE):Connect(function()
+		if player:GetAttribute(CLIENT_READY_ATTRIBUTE) == true then
+			ready = true
+		end
+	end)
+
+	local deadline = os.clock() + CLIENT_CAMERA_READY_TIMEOUT
+	while not ready and os.clock() < deadline do
+		if player:GetAttribute(CLIENT_READY_ATTRIBUTE) == true then
+			ready = true
+			break
+		end
+		task.wait(0.05)
+	end
+
+	connection:Disconnect()
+	return ready
+end
+
+-- Create the blackout before waiting for any replicated camera state. This mask
+-- now remains until BankersCameraAuthority confirms the client has streamed the
+-- menu route and rendered the scripted start shot at least once.
 local playerGui = player:WaitForChild("PlayerGui")
 local oldBootGui = playerGui:FindFirstChild("BankersBootGui")
 if oldBootGui then
@@ -89,7 +117,6 @@ print("[BankersMenu] startup blackout active before camera config wait")
 local configFolder = ReplicatedStorage:WaitForChild(CONFIG_FOLDER_NAME, 10)
 if not configFolder then
 	warn("[BankersMenu] replicated camera config missing; UI skipped")
-	bootGui:Destroy()
 	return
 end
 
@@ -101,8 +128,7 @@ if configFolder:GetAttribute("Ready") ~= true then
 end
 
 if configFolder:GetAttribute("Ready") ~= true then
-	warn("[BankersMenu] camera config never became ready; UI skipped")
-	bootGui:Destroy()
+	warn("[BankersMenu] camera config never became ready; keeping startup blackout")
 	return
 end
 
@@ -245,10 +271,18 @@ local function showMenu()
 	}):Play()
 end
 
--- The real Bankers fade is now fully opaque, so it can safely replace the
--- temporary boot mask without exposing a single frame of the default sky.
+print("[BankersMenu] server camera config ready; waiting for client camera/stream readiness")
+local clientCameraReady = waitForClientCameraReady()
+if not clientCameraReady then
+	warn("[BankersMenu] client camera did not become ready before timeout; keeping startup blackout")
+	return
+end
+
+-- BankersCameraAuthority has now requested streaming around the route, positioned
+-- the scripted camera at MenuCameraStart, and rendered that frame. The opaque
+-- Bankers fade can safely replace the boot mask without exposing empty sky.
 bootGui:Destroy()
-print("[BankersMenu] startup blackout handed off to cinematic fade")
+print("[BankersMenu] startup blackout handed off after client camera became ready")
 
 TweenService:Create(fade, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 	BackgroundTransparency = 1,
