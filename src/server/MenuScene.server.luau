@@ -27,7 +27,24 @@ local function findDisplayVehicleAncestor(instance: Instance): Model?
 	return nil
 end
 
-local function freezeModel(model: Model)
+local function findDisplayRigAncestor(instance: Instance): Model?
+	local current: Instance? = instance
+	while current and current ~= workspace do
+		if current:IsA("Model") and current.Name == "Rig" and current:FindFirstChildOfClass("Humanoid") then
+			return current
+		end
+		current = current.Parent
+	end
+	return nil
+end
+
+local function freezePart(part: BasePart)
+	part.Anchored = true
+	part.AssemblyLinearVelocity = Vector3.zero
+	part.AssemblyAngularVelocity = Vector3.zero
+end
+
+local function freezeDisplayRig(model: Model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.AutoRotate = false
@@ -37,9 +54,21 @@ local function freezeModel(model: Model)
 
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			descendant.AssemblyLinearVelocity = Vector3.zero
-			descendant.AssemblyAngularVelocity = Vector3.zero
+			freezePart(descendant)
+		elseif descendant:IsA("Tool") then
+			descendant.CanBeDropped = false
+		elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
+			-- Menu rigs are display-only. Disable scripts embedded in weapon/free-model
+			-- props so they cannot unanchor, equip, animate, or drop themselves.
+			descendant.Enabled = false
+		end
+	end
+end
+
+local function freezeVehicleModel(model: Model)
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			freezePart(descendant)
 		end
 	end
 end
@@ -47,17 +76,15 @@ end
 local function freezeVehiclesFolder(folder: Instance)
 	for _, descendant in folder:GetDescendants() do
 		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			descendant.AssemblyLinearVelocity = Vector3.zero
-			descendant.AssemblyAngularVelocity = Vector3.zero
+			freezePart(descendant)
 		end
 	end
 end
 
 local function stabilizeScene()
 	for _, descendant in workspace:GetDescendants() do
-		if descendant:IsA("Model") and descendant.Name == "Rig" then
-			freezeModel(descendant)
+		if descendant:IsA("Model") and descendant.Name == "Rig" and descendant:FindFirstChildOfClass("Humanoid") then
+			freezeDisplayRig(descendant)
 		end
 	end
 
@@ -68,7 +95,7 @@ local function stabilizeScene()
 
 	for _, child in workspace:GetChildren() do
 		if isDisplayVehicleModel(child) then
-			freezeModel(child)
+			freezeVehicleModel(child)
 		end
 	end
 end
@@ -172,6 +199,7 @@ Players.PlayerAdded:Connect(keepPlayerOutOfScene)
 stabilizeScene()
 publishCameraConfig()
 
+task.delay(0.25, stabilizeScene)
 task.delay(1, function()
 	stabilizeScene()
 	publishCameraConfig()
@@ -183,8 +211,20 @@ task.delay(3, function()
 end)
 
 workspace.DescendantAdded:Connect(function(descendant)
-	if descendant:IsA("Model") and descendant.Name == "Rig" then
-		task.defer(freezeModel, descendant)
+	if descendant:IsA("Model") and descendant.Name == "Rig" and descendant:FindFirstChildOfClass("Humanoid") then
+		task.defer(freezeDisplayRig, descendant)
+		return
+	end
+
+	local rig = findDisplayRigAncestor(descendant)
+	if rig then
+		if descendant:IsA("BasePart") then
+			task.defer(freezePart, descendant)
+		elseif descendant:IsA("Tool") then
+			descendant.CanBeDropped = false
+		elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
+			descendant.Enabled = false
+		end
 		return
 	end
 
@@ -196,11 +236,9 @@ workspace.DescendantAdded:Connect(function(descendant)
 
 		local vehicle = findDisplayVehicleAncestor(descendant)
 		if vehicle then
-			descendant.Anchored = true
-			descendant.AssemblyLinearVelocity = Vector3.zero
-			descendant.AssemblyAngularVelocity = Vector3.zero
+			task.defer(freezePart, descendant)
 		end
 	end
 end)
 
-print("[BankersMenu] menu-only scene stabilized; rigs and display vehicles locked; player spawning disabled")
+print("[BankersMenu] menu-only scene stabilized; rigs, hand props, and display vehicles locked; player spawning disabled")
