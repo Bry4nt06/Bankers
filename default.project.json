@@ -1,0 +1,24 @@
+{
+  "name": "Bankers Menu Scene",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "MenuScene": {
+        "$path": "src/server/MenuScene.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": true,
+        "BankersMenu": {
+          "$path": "src/client/BankersMenu.client.luau"
+        }
+      }
+    }
+  }
+}
