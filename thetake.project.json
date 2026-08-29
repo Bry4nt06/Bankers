@@ -1,0 +1,24 @@
+{
+  "name": "THE TAKE",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "TheTake": {
+        "$path": "src/thetake/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": true,
+        "TheTake": {
+          "$path": "src/thetake/client"
+        }
+      }
+    }
+  }
+}
