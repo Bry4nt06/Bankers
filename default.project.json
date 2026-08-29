@@ -4,7 +4,7 @@
     "$className": "DataModel",
     "ServerScriptService": {
       "$className": "ServerScriptService",
-      "$ignoreUnknownInstances": true,
+      "$ignoreUnknownInstances": false,
       "LegacyCleanup": {
         "$path": "src/server/LegacyCleanup.server.luau"
       },
@@ -17,7 +17,7 @@
       "$ignoreUnknownInstances": true,
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
-        "$ignoreUnknownInstances": true,
+        "$ignoreUnknownInstances": false,
         "LegacyCameraGuard": {
           "$path": "src/client/LegacyCameraGuard.client.luau"
         },
