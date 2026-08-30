@@ -5,9 +5,9 @@ local VaultCatalog = {
 		description = "Weapons available to own, unlock, and equip through THE VAULT.",
 	},
 	{
-		id = "skins",
-		name = "SKINS",
-		description = "Weapon finishes and cosmetic variants for owned weapons.",
+		id = "gear",
+		name = "GEAR",
+		description = "Wearable tactical gear, armor, helmets, masks, packs, and crew equipment.",
 	},
 	{
 		id = "emotes",
