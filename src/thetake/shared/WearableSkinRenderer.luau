@@ -2,13 +2,6 @@ local Renderer = {}
 
 local OVERLAY_NAME = "TheTakeWearableSkin"
 
-local COLORS = {
-	navy = Color3.fromRGB(20, 35, 82),
-	wine = Color3.fromRGB(108, 24, 60),
-	bronze = Color3.fromRGB(193, 119, 51),
-	cyan = Color3.fromRGB(45, 174, 190),
-}
-
 local function clear(rig: Model)
 	local existing = rig:FindFirstChild(OVERLAY_NAME)
 	if existing then
@@ -16,118 +9,124 @@ local function clear(rig: Model)
 	end
 end
 
-local function weldPanel(folder: Folder, target: BasePart, name: string, size: Vector3, offset: CFrame, color: Color3, material: Enum.Material)
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Size = size
-	part.Color = color
-	part.Material = material
+local function findTarget(rig: Model, preferred: string?, fallback: string?): BasePart?
+	if preferred and preferred ~= "" then
+		local part = rig:FindFirstChild(preferred)
+		if part and part:IsA("BasePart") then
+			return part
+		end
+	end
+	if fallback and fallback ~= "" then
+		local part = rig:FindFirstChild(fallback)
+		if part and part:IsA("BasePart") then
+			return part
+		end
+	end
+	return nil
+end
+
+local function sanitizeClone(part: BasePart)
+	part.Anchored = false
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = false
 	part.Massless = true
-	part.CastShadow = true
-	part.CFrame = target.CFrame * offset
-	part.Parent = folder
 
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = target
-	weld.Part1 = part
-	weld.Parent = part
+	for _, descendant in ipairs(part:GetDescendants()) do
+		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+			descendant:Destroy()
+		elseif descendant:IsA("Sound") or descendant:IsA("ProximityPrompt") then
+			descendant:Destroy()
+		elseif descendant:IsA("BasePart") then
+			descendant.Anchored = false
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+			descendant.Massless = true
+		end
+	end
+end
 
-	return part
+local function scaledLocalCFrame(reference: BasePart, target: BasePart, source: BasePart): CFrame
+	local localCFrame = reference.CFrame:ToObjectSpace(source.CFrame)
+	local localPosition = localCFrame.Position
+	local scale = Vector3.new(
+		target.Size.X / math.max(reference.Size.X, 0.001),
+		target.Size.Y / math.max(reference.Size.Y, 0.001),
+		target.Size.Z / math.max(reference.Size.Z, 0.001)
+	)
+	local scaledPosition = Vector3.new(
+		localPosition.X * scale.X,
+		localPosition.Y * scale.Y,
+		localPosition.Z * scale.Z
+	)
+	return CFrame.new(scaledPosition) * localCFrame.Rotation
+end
+
+local function scaledSize(reference: BasePart, target: BasePart, source: BasePart): Vector3
+	local scale = Vector3.new(
+		target.Size.X / math.max(reference.Size.X, 0.001),
+		target.Size.Y / math.max(reference.Size.Y, 0.001),
+		target.Size.Z / math.max(reference.Size.Z, 0.001)
+	)
+	return Vector3.new(
+		source.Size.X * scale.X,
+		source.Size.Y * scale.Y,
+		source.Size.Z * scale.Z
+	)
 end
 
 function Renderer.Clear(rig: Model)
 	clear(rig)
 end
 
-function Renderer.ApplyDefaultCrew(rig: Model)
+function Renderer.ApplyTemplate(rig: Model, template: Instance): boolean
 	clear(rig)
-
-	local torso = rig:FindFirstChild("UpperTorso") or rig:FindFirstChild("Torso")
-	if not torso or not torso:IsA("BasePart") then
+	if not template then
 		return false
 	end
 
-	local folder = Instance.new("Folder")
-	folder.Name = OVERLAY_NAME
-	folder.Parent = rig
+	local overlay = Instance.new("Folder")
+	overlay.Name = OVERLAY_NAME
+	overlay.Parent = rig
 
-	local chestWidth = torso.Size.X + 0.16
-	local chestHeight = math.max(torso.Size.Y * 0.72, 1.15)
-	local chestDepth = 0.18
+	local applied = 0
+	for _, source in ipairs(template:GetDescendants()) do
+		if source:IsA("BasePart") and source:GetAttribute("SkinReferencePart") ~= true then
+			local attachTo = source:GetAttribute("SkinAttachTo")
+			local attachFallback = source:GetAttribute("SkinAttachFallback")
+			local referenceName = source:GetAttribute("SkinReference")
 
-	weldPanel(
-		folder,
-		torso,
-		"FrontCarrier",
-		Vector3.new(chestWidth, chestHeight, chestDepth),
-		CFrame.new(0, -torso.Size.Y * 0.03, -(torso.Size.Z / 2 + chestDepth / 2 + 0.02)),
-		COLORS.navy,
-		Enum.Material.Fabric
-	)
+			if type(attachTo) == "string" and type(referenceName) == "string" then
+				local target = findTarget(
+					rig,
+					attachTo,
+					type(attachFallback) == "string" and attachFallback or nil
+				)
+				local reference = template:FindFirstChild(referenceName, true)
 
-	weldPanel(
-		folder,
-		torso,
-		"BackCarrier",
-		Vector3.new(chestWidth, chestHeight * 0.9, chestDepth),
-		CFrame.new(0, -torso.Size.Y * 0.01, torso.Size.Z / 2 + chestDepth / 2 + 0.02),
-		COLORS.wine,
-		Enum.Material.Fabric
-	)
+				if target and reference and reference:IsA("BasePart") then
+					local clone = source:Clone()
+					sanitizeClone(clone)
+					clone.Size = scaledSize(reference, target, source)
+					clone.CFrame = target.CFrame * scaledLocalCFrame(reference, target, source)
+					clone.Parent = overlay
 
-	local strapWidth = math.max(torso.Size.X * 0.15, 0.24)
-	for _, x in ipairs({-torso.Size.X * 0.28, torso.Size.X * 0.28}) do
-		weldPanel(
-			folder,
-			torso,
-			"ShoulderStrap",
-			Vector3.new(strapWidth, torso.Size.Y * 0.82, 0.11),
-			CFrame.new(x, 0, -(torso.Size.Z / 2 + 0.13)),
-			COLORS.bronze,
-			Enum.Material.Fabric
-		)
-	end
-
-	local belt = weldPanel(
-		folder,
-		torso,
-		"CrewBelt",
-		Vector3.new(torso.Size.X + 0.24, 0.22, torso.Size.Z + 0.20),
-		CFrame.new(0, -torso.Size.Y * 0.44, 0),
-		COLORS.bronze,
-		Enum.Material.Metal
-	)
-	belt.CastShadow = false
-
-	local centerAccent = weldPanel(
-		folder,
-		torso,
-		"CrewAccent",
-		Vector3.new(math.max(torso.Size.X * 0.28, 0.5), 0.12, 0.08),
-		CFrame.new(0, torso.Size.Y * 0.18, -(torso.Size.Z / 2 + 0.16)),
-		COLORS.cyan,
-		Enum.Material.Neon
-	)
-	centerAccent.CastShadow = false
-
-	for _, limbName in ipairs({"LeftUpperArm", "RightUpperArm", "Left Arm", "Right Arm"}) do
-		local limb = rig:FindFirstChild(limbName)
-		if limb and limb:IsA("BasePart") then
-			weldPanel(
-				folder,
-				limb,
-				"CrewArmBand",
-				Vector3.new(limb.Size.X + 0.08, math.max(limb.Size.Y * 0.18, 0.22), limb.Size.Z + 0.08),
-				CFrame.new(0, limb.Size.Y * 0.20, 0),
-				COLORS.wine,
-				Enum.Material.Fabric
-			)
+					local weld = Instance.new("WeldConstraint")
+					weld.Name = "SkinWeld"
+					weld.Part0 = target
+					weld.Part1 = clone
+					weld.Parent = clone
+					applied += 1
+				end
+			end
 		end
 	end
 
+	if applied == 0 then
+		overlay:Destroy()
+		return false
+	end
 	return true
 end
 
