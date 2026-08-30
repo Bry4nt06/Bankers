@@ -7,10 +7,10 @@ local ServerStorage = game:GetService("ServerStorage")
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
-local SkinRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
+local GearRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
 local storeIndex = theTake:WaitForChild("VaultStoreIndex")
 local catalogRoot = ServerStorage:WaitForChild("TheTakeVaultCatalog")
-local skinsFolder = catalogRoot:WaitForChild("Skins")
+local gearFolder = catalogRoot:WaitForChild("Gear")
 
 local remotes = theTake:FindFirstChild("VaultRemotes")
 if remotes then
@@ -47,10 +47,10 @@ local function newProfile()
 	return {
 		Cash = Config.StartingCash,
 		Owned = {
-			[Config.DefaultSkinId] = true,
+			[Config.DefaultGearId] = true,
 		},
 		Equipped = {
-			Skin = Config.DefaultSkinId,
+			Gear = Config.DefaultGearId,
 			Primary = "",
 			Secondary = "",
 		},
@@ -73,16 +73,23 @@ local function normalizeProfile(raw)
 		end
 	end
 	if type(raw.Equipped) == "table" then
-		for _, key in ipairs({"Skin", "Primary", "Secondary"}) do
+		local gearValue = raw.Equipped.Gear
+		if type(gearValue) ~= "string" or gearValue == "" then
+			gearValue = raw.Equipped.Skin -- legacy v1 profile field
+		end
+		if type(gearValue) == "string" and gearValue ~= "" then
+			profile.Equipped.Gear = gearValue
+		end
+		for _, key in ipairs({"Primary", "Secondary"}) do
 			local value = raw.Equipped[key]
 			if type(value) == "string" then
 				profile.Equipped[key] = value
 			end
 		end
 	end
-	profile.Owned[Config.DefaultSkinId] = true
-	if profile.Equipped.Skin == "" or not profile.Owned[profile.Equipped.Skin] then
-		profile.Equipped.Skin = Config.DefaultSkinId
+	profile.Owned[Config.DefaultGearId] = true
+	if profile.Equipped.Gear == "" or not profile.Owned[profile.Equipped.Gear] then
+		profile.Equipped.Gear = Config.DefaultGearId
 	end
 	return profile
 end
@@ -98,7 +105,8 @@ local function publicProfile(profile)
 		Cash = profile.Cash,
 		Owned = owned,
 		Equipped = {
-			Skin = profile.Equipped.Skin,
+			Gear = profile.Equipped.Gear,
+			Skin = profile.Equipped.Gear, -- temporary compatibility alias
 			Primary = profile.Equipped.Primary,
 			Secondary = profile.Equipped.Secondary,
 		},
@@ -107,21 +115,22 @@ end
 
 local function applyPlayerAttributes(player: Player, profile)
 	player:SetAttribute("VaultCash", profile.Cash)
-	player:SetAttribute("VaultEquippedSkin", profile.Equipped.Skin)
+	player:SetAttribute("VaultEquippedGear", profile.Equipped.Gear)
+	player:SetAttribute("VaultEquippedSkin", profile.Equipped.Gear) -- compatibility alias
 	player:SetAttribute("VaultEquippedPrimary", profile.Equipped.Primary)
 	player:SetAttribute("VaultEquippedSecondary", profile.Equipped.Secondary)
 end
 
-local function findSkinTemplate(itemId: string): Instance?
-	for _, skin in ipairs(skinsFolder:GetChildren()) do
-		if skin:GetAttribute("VaultItemId") == itemId then
-			return skin
+local function findGearTemplate(itemId: string): Instance?
+	for _, gear in ipairs(gearFolder:GetChildren()) do
+		if gear:GetAttribute("VaultItemId") == itemId then
+			return gear
 		end
 	end
 	return nil
 end
 
-local function applyEquippedSkin(player: Player, character: Model?)
+local function applyEquippedGear(player: Player, character: Model?)
 	if not character then
 		return
 	end
@@ -130,15 +139,17 @@ local function applyEquippedSkin(player: Player, character: Model?)
 		return
 	end
 
-	SkinRenderer.Clear(character)
-	local template = findSkinTemplate(profile.Equipped.Skin)
+	GearRenderer.Clear(character)
+	local template = findGearTemplate(profile.Equipped.Gear)
 	if not template then
-		warn(string.format("[TheVaultProfile] equipped skin template missing: %s", profile.Equipped.Skin))
+		warn(string.format("[TheVaultProfile] equipped gear template missing: %s", profile.Equipped.Gear))
 		return
 	end
-
-	if not SkinRenderer.ApplyTemplate(character, template) then
-		warn(string.format("[TheVaultProfile] skin template could not attach: %s", profile.Equipped.Skin))
+	if template:GetAttribute("VaultWearable") ~= true then
+		return
+	end
+	if not GearRenderer.ApplyTemplate(character, template) then
+		warn(string.format("[TheVaultProfile] gear template could not attach: %s", profile.Equipped.Gear))
 	end
 end
 
@@ -160,13 +171,13 @@ local function loadProfile(player: Player)
 	applyPlayerAttributes(player, profile)
 
 	player.CharacterAdded:Connect(function(character)
-		task.defer(applyEquippedSkin, player, character)
+		task.defer(applyEquippedGear, player, character)
 	end)
 	if player.Character then
-		task.defer(applyEquippedSkin, player, player.Character)
+		task.defer(applyEquippedGear, player, player.Character)
 	end
 
-	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | default skin owned", player.Name, profile.Cash))
+	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | default gear owned", player.Name, profile.Cash))
 end
 
 local function saveProfile(player: Player)
@@ -263,12 +274,12 @@ equipItem.OnServerInvoke = function(player: Player, itemId)
 	end
 
 	local category = tostring(entry:GetAttribute("Category") or "")
-	if category == "Skins" then
+	if category == "Gear" then
 		if entry:GetAttribute("Wearable") ~= true then
-			return false, "SKIN_NOT_WEARABLE", publicProfile(profile)
+			return false, "GEAR_FIT_PENDING", publicProfile(profile)
 		end
-		profile.Equipped.Skin = itemId
-		applyEquippedSkin(player, player.Character)
+		profile.Equipped.Gear = itemId
+		applyEquippedGear(player, player.Character)
 	elseif category == "Guns" then
 		local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
 		if subcategory == "Pistols" then
