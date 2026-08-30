@@ -13,9 +13,9 @@ Manifest.Guns = {
 	{assetId = 464785640, itemId = "guns-ksr29", displayName = "KSR-29 Sniper Rifle", subcategory = "SnipersHeavy", price = 3400, creator = "@whyatt"},
 }
 
--- Gear is assigned to explicit wardrobe slots so only one item can occupy each
--- physical region. Fit hints are intentionally conservative because the importer
--- may resolve a different free-model source when a listed Store asset is unavailable.
+-- Gear has an explicit physical slot. THE VAULT and LOADOUTS both use these
+-- slots for filtering/replacement so a helmet can coexist with a mask/vest/pack,
+-- while two items from the same slot cannot overlap each other.
 Manifest.Gear = {
 	{assetId = 4353344617, itemId = "gear-american-tactical-vest", displayName = "American Tactical Vest", price = 900, creator = "@ryan6475h", gearSlot = "Vest", fitScale = 0.90},
 	{assetId = 8623886809, itemId = "gear-iotv", displayName = "IOTV Carrier", price = 1600, creator = "@pug1003", gearSlot = "Vest", fitScale = 0.88},
