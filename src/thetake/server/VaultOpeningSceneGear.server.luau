@@ -111,13 +111,24 @@ local function findOpeningAccessory(scene: Instance, sourceName: string): Access
 end
 
 local function sanitizeAccessory(accessory: Accessory)
+	local all = {accessory}
 	for _, descendant in ipairs(accessory:GetDescendants()) do
+		table.insert(all, descendant)
+	end
+
+	for index = #all, 1, -1 do
+		local descendant = all[index]
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 			descendant:Destroy()
 		elseif descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction")
 			or descendant:IsA("BindableEvent") or descendant:IsA("BindableFunction")
 			or descendant:IsA("Sound") or descendant:IsA("ClickDetector")
 			or descendant:IsA("ProximityPrompt") then
+			descendant:Destroy()
+		elseif descendant:IsA("RigidConstraint") or descendant:IsA("WeldConstraint")
+			or descendant:IsA("Weld") or descendant:IsA("Motor6D") then
+			-- These constraints reference the opening-scene donor rig. They can pull
+			-- the cloned accessory away from the Vault mannequin or keep it invisible.
 			descendant:Destroy()
 		elseif descendant:IsA("BasePart") then
 			descendant.Anchored = false
@@ -162,7 +173,7 @@ local function seedRecord(scene: Instance, record): boolean
 	clone:SetAttribute("GearType", "OpeningSceneAccessory")
 	clone:SetAttribute("GearSlot", record.gearSlot)
 	-- Opening-scene accessories are cloned after already being attached to donor rigs.
-	-- Their copied RigidConstraint state is not reliable on the neutral Vault mannequin.
+	-- Their copied attachment state is not reliable on the neutral Vault mannequin.
 	-- Force the bounding-box fitter first so every imported item is visible/selectable,
 	-- then use Studio Fit Mode to dial in its final scale/offset/rotation.
 	clone:SetAttribute("GearUseAutoFit", true)
