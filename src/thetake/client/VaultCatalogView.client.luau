@@ -25,8 +25,8 @@ local CATEGORY_MAP = {
 
 local GEAR_FILTERS = {
 	{slot = "All", label = "ALL"},
-	{slot = "Headwear", label = "HELMETS"},
-	{slot = "Eyewear", label = "EYE"},
+	{slot = "Headwear", label = "HEAD"},
+	{slot = "Eyewear", label = "EYES"},
 	{slot = "FaceMask", label = "MASKS"},
 	{slot = "Vest", label = "VESTS"},
 	{slot = "Back", label = "PACKS"},
@@ -593,7 +593,7 @@ local function attach(panel: Frame)
 		local button = Instance.new("TextButton")
 		button.Name = "GearFilter_" .. filter.slot
 		button.LayoutOrder = order
-		button.Size = UDim2.fromOffset(filter.slot == "All" and 44 or 72, 30)
+		button.Size = UDim2.fromOffset(filter.slot == "All" and 44 or 64, 30)
 		button.BackgroundColor3 = Color3.fromRGB(24, 54, 82)
 		button.BackgroundTransparency = 0.04
 		button.BorderSizePixel = 0
