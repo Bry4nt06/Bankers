@@ -11,13 +11,19 @@ GearRules.SlotOrder = {
 	"Hands",
 }
 
+GearRules.RetiredItemIds = {
+	["gear-ir-helmet"] = true,
+	["gear-helmet-model"] = true,
+	["gear-backpack"] = true,
+}
+
 local SLOT_LABELS = {
 	Base = "BASE OUTFIT",
 	Headwear = "HATS / HELMETS",
 	Eyewear = "GLASSES / GOGGLES",
 	FaceMask = "FACE MASKS",
 	Vest = "VESTS / CARRIERS",
-	Back = "BACKPACKS",
+	Back = "BAGS / PACKS",
 	Waist = "BELTS / HOLSTERS",
 	Hands = "GLOVES",
 }
@@ -41,6 +47,10 @@ local function textFor(instance: Instance): string
 		tostring(instance:GetAttribute("VaultDisplayName") or instance.Name),
 		tostring(instance:GetAttribute("GearType") or ""),
 	}, " "))
+end
+
+function GearRules.IsRetired(itemId: string?): boolean
+	return type(itemId) == "string" and GearRules.RetiredItemIds[itemId] == true
 end
 
 function GearRules.NormalizeSlot(slot: string?, itemId: string?): string
@@ -98,7 +108,10 @@ function GearRules.InferSlot(instance: Instance): string
 		or text:find("cap", 1, true)
 		or text:find("beanie", 1, true) then
 		return "Headwear"
-	elseif text:find("backpack", 1, true) or text:find("pack", 1, true) then
+	elseif text:find("backpack", 1, true)
+		or text:find("duffel", 1, true)
+		or text:find("ruck", 1, true)
+		or text:find("pack", 1, true) then
 		return "Back"
 	elseif text:find("belt", 1, true) or text:find("holster", 1, true) or text:find("waist", 1, true) then
 		return "Waist"
@@ -120,6 +133,10 @@ function GearRules.InferSlot(instance: Instance): string
 end
 
 function GearRules.IsWearable(instance: Instance): boolean
+	local itemId = tostring(instance:GetAttribute("VaultItemId") or "")
+	if GearRules.IsRetired(itemId) then
+		return false
+	end
 	if instance:GetAttribute("VaultWearable") == true then
 		return true
 	end
