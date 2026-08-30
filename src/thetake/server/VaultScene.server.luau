@@ -1,9 +1,11 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local ROOT_NAME = "TheTakeVaultScene"
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
+local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
 local ORIGIN = Vector3.new(5000, 260, 5000)
 
 local ROOM_WIDTH = 132
@@ -33,6 +35,11 @@ end
 local oldConfig = ReplicatedStorage:FindFirstChild(CONFIG_NAME)
 if oldConfig then
 	oldConfig:Destroy()
+end
+
+local oldFocusRemote = ReplicatedStorage:FindFirstChild(FOCUS_REMOTE_NAME)
+if oldFocusRemote then
+	oldFocusRemote:Destroy()
 end
 
 local scene = Instance.new("Model")
@@ -148,6 +155,7 @@ end
 
 local cameraStart = createMarker("VaultCameraStart", CFrame.lookAt(ORIGIN + Vector3.new(0, 10.5, -23), ORIGIN + Vector3.new(0, 7.5, 5)))
 local cameraEnd = createMarker("VaultCameraEnd", CFrame.lookAt(ORIGIN + Vector3.new(-8, 9.2, -17), ORIGIN + Vector3.new(3, 7.2, 5)))
+local streamingFocus = createMarker("StreamingFocus", CFrame.new(ORIGIN + Vector3.new(0, 9, 8)))
 
 local config = Instance.new("Folder")
 config.Name = CONFIG_NAME
@@ -168,6 +176,32 @@ local standValue = Instance.new("CFrameValue")
 standValue.Name = "AvatarStand"
 standValue.Value = markers.AvatarStand.CFrame
 standValue.Parent = config
+
+local focusRemote = Instance.new("RemoteEvent")
+focusRemote.Name = FOCUS_REMOTE_NAME
+focusRemote.Parent = ReplicatedStorage
+focusRemote.OnServerEvent:Connect(function(player: Player, enabled)
+	if enabled == true then
+		player.ReplicationFocus = streamingFocus
+		print("[TheVault] streaming focus pinned for " .. player.Name)
+		return
+	end
+
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		player.ReplicationFocus = root
+	else
+		player.ReplicationFocus = nil
+	end
+	print("[TheVault] streaming focus released for " .. player.Name)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.ReplicationFocus == streamingFocus then
+		player.ReplicationFocus = nil
+	end
+end)
 
 local function hasVisual(instance: Instance): boolean
 	return instance:IsA("BasePart") or instance:FindFirstChildWhichIsA("BasePart", true) ~= nil
