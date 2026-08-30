@@ -8,11 +8,6 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
-local theTake = ReplicatedStorage:WaitForChild("TheTake")
-local shared = theTake:WaitForChild("Shared")
-local GearRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
-local previewRoot = theTake:WaitForChild("VaultPreviewModels", 20)
-
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
 local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
 local MENU_MODE_ATTRIBUTE = "TheTakeMenuMode"
@@ -74,6 +69,7 @@ local smoothedX = 0
 local smoothedY = 0
 local avatarRig: Model? = nil
 local streamGeneration = 0
+local avatarGeneration = 0
 
 local function requestVaultStream()
 	if not workspace.StreamingEnabled then
@@ -117,16 +113,21 @@ end
 
 local function disableRigBehavior(rig: Model)
 	for _, descendant in ipairs(rig:GetDescendants()) do
-		if descendant:IsA("Script") or descendant:IsA("LocalScript") then
-			descendant.Enabled = false
+		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+			descendant:Destroy()
+		elseif descendant:IsA("Tool") then
+			descendant:Destroy()
 		elseif descendant:IsA("BasePart") then
 			descendant.Anchored = true
 			descendant.CanCollide = false
 			descendant.CanTouch = false
 			descendant.CanQuery = false
+			descendant.LocalTransparencyModifier = 0
 		elseif descendant:IsA("Sound") then
 			descendant.SoundId = ""
 			descendant.Volume = 0
+		elseif descendant:IsA("BillboardGui") then
+			descendant.Enabled = false
 		end
 	end
 
@@ -137,58 +138,9 @@ local function disableRigBehavior(rig: Model)
 	end
 end
 
-local function getEquippedGearId()
-	local value = player:GetAttribute("VaultEquippedGear")
-	if type(value) == "string" and value ~= "" then
-		return value
-	end
-	local legacy = player:GetAttribute("VaultEquippedSkin")
-	return type(legacy) == "string" and legacy or ""
-end
-
-local function refreshAvatarGear()
-	if not avatarRig or not avatarRig.Parent then
-		return
-	end
-	GearRenderer.Clear(avatarRig)
-	if not previewRoot then
-		return
-	end
-
-	local equippedId = getEquippedGearId()
-	if equippedId == "" then
-		return
-	end
-	local template = previewRoot:FindFirstChild(equippedId)
-	if template then
-		GearRenderer.ApplyTemplate(avatarRig, template)
-	end
-end
-
-local function createAvatarDisplay()
-	if avatarRig and avatarRig.Parent then
-		refreshAvatarGear()
-		return
-	end
-
-	local okDescription, description = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(player.UserId)
-	end)
-	if not okDescription or not description then
-		warn("[TheVault] could not load player avatar description")
-		return
-	end
-
-	local okRig, rig = pcall(function()
-		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
-	end)
-	if not okRig or not rig then
-		warn("[TheVault] could not create player avatar display rig")
-		return
-	end
-
-	rig.Name = "TheTakeVaultAvatar_" .. player.UserId
+local function placeAvatarRig(rig: Model)
 	disableRigBehavior(rig)
+	rig.Name = "TheTakeVaultAvatar_" .. player.UserId
 	rig.Parent = workspace
 
 	local _, bounds = rig:GetBoundingBox()
@@ -197,19 +149,71 @@ local function createAvatarDisplay()
 	local facing = CFrame.lookAt(standPosition, cameraTarget)
 	rig:PivotTo(facing * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
 	avatarRig = rig
-	refreshAvatarGear()
 	print("[TheVault] player avatar display ready and facing camera")
 end
 
-player:GetAttributeChangedSignal("VaultEquippedGear"):Connect(refreshAvatarGear)
-player:GetAttributeChangedSignal("VaultEquippedSkin"):Connect(refreshAvatarGear)
-if previewRoot then
-	previewRoot.ChildAdded:Connect(function(child)
-		if child.Name == getEquippedGearId() then
-			task.defer(refreshAvatarGear)
+local function cloneLiveCharacter(): Model?
+	local character = player.Character
+	if not character or not character.Parent then
+		return nil
+	end
+
+	local previousArchivable = character.Archivable
+	character.Archivable = true
+	local ok, clone = pcall(function()
+		return character:Clone()
+	end)
+	character.Archivable = previousArchivable
+	if ok and clone and clone:IsA("Model") then
+		return clone
+	end
+	return nil
+end
+
+local function createFallbackAvatar(): Model?
+	local okDescription, description = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+	end)
+	if not okDescription or not description then
+		return nil
+	end
+	local okRig, rig = pcall(function()
+		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
+	end)
+	return okRig and rig or nil
+end
+
+local function rebuildAvatarDisplay()
+	avatarGeneration += 1
+	local generation = avatarGeneration
+
+	if avatarRig then
+		avatarRig:Destroy()
+		avatarRig = nil
+	end
+	if not vaultOpen then
+		return
+	end
+
+	-- Give replicated server-side gear welds a moment to reach this client before cloning.
+	task.delay(0.12, function()
+		if not vaultOpen or generation ~= avatarGeneration then
+			return
 		end
+		local rig = cloneLiveCharacter() or createFallbackAvatar()
+		if not rig then
+			warn("[TheVault] could not create player avatar display rig")
+			return
+		end
+		placeAvatarRig(rig)
 	end)
 end
+
+player:GetAttributeChangedSignal("VaultGearRevision"):Connect(function()
+	if vaultOpen then
+		rebuildAvatarDisplay()
+	end
+end)
 
 local function styleVaultPanel(panel: Frame)
 	panel.AnchorPoint = Vector2.new(0, 0.5)
@@ -248,7 +252,7 @@ local function setVaultOpen(open: boolean)
 
 	if open then
 		startVaultStreaming()
-		createAvatarDisplay()
+		rebuildAvatarDisplay()
 		entryStartedAt = os.clock()
 		entryFromCFrame = camera.CFrame
 		entryFromFov = camera.FieldOfView
@@ -257,6 +261,7 @@ local function setVaultOpen(open: boolean)
 		smoothedY = 0
 		print("[TheVault] entering 3D showroom")
 	else
+		avatarGeneration += 1
 		stopVaultStreaming()
 		print("[TheVault] returning camera authority to main menu")
 	end
