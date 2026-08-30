@@ -10,7 +10,7 @@ local camera = workspace.CurrentCamera
 
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
-local SkinRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
+local GearRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
 local previewRoot = theTake:WaitForChild("VaultPreviewModels", 20)
 
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
@@ -137,28 +137,37 @@ local function disableRigBehavior(rig: Model)
 	end
 end
 
-local function refreshAvatarSkin()
+local function getEquippedGearId()
+	local value = player:GetAttribute("VaultEquippedGear")
+	if type(value) == "string" and value ~= "" then
+		return value
+	end
+	local legacy = player:GetAttribute("VaultEquippedSkin")
+	return type(legacy) == "string" and legacy or ""
+end
+
+local function refreshAvatarGear()
 	if not avatarRig or not avatarRig.Parent then
 		return
 	end
-	SkinRenderer.Clear(avatarRig)
+	GearRenderer.Clear(avatarRig)
 	if not previewRoot then
 		return
 	end
 
-	local equippedId = player:GetAttribute("VaultEquippedSkin")
-	if type(equippedId) ~= "string" or equippedId == "" then
+	local equippedId = getEquippedGearId()
+	if equippedId == "" then
 		return
 	end
 	local template = previewRoot:FindFirstChild(equippedId)
 	if template then
-		SkinRenderer.ApplyTemplate(avatarRig, template)
+		GearRenderer.ApplyTemplate(avatarRig, template)
 	end
 end
 
 local function createAvatarDisplay()
 	if avatarRig and avatarRig.Parent then
-		refreshAvatarSkin()
+		refreshAvatarGear()
 		return
 	end
 
@@ -188,15 +197,16 @@ local function createAvatarDisplay()
 	local facing = CFrame.lookAt(standPosition, cameraTarget)
 	rig:PivotTo(facing * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
 	avatarRig = rig
-	refreshAvatarSkin()
+	refreshAvatarGear()
 	print("[TheVault] player avatar display ready and facing camera")
 end
 
-player:GetAttributeChangedSignal("VaultEquippedSkin"):Connect(refreshAvatarSkin)
+player:GetAttributeChangedSignal("VaultEquippedGear"):Connect(refreshAvatarGear)
+player:GetAttributeChangedSignal("VaultEquippedSkin"):Connect(refreshAvatarGear)
 if previewRoot then
 	previewRoot.ChildAdded:Connect(function(child)
-		if child.Name == player:GetAttribute("VaultEquippedSkin") then
-			task.defer(refreshAvatarSkin)
+		if child.Name == getEquippedGearId() then
+			task.defer(refreshAvatarGear)
 		end
 	end)
 end
