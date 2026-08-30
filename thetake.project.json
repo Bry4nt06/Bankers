@@ -37,7 +37,13 @@
           "SnipersHeavy": {"$className": "Folder", "$ignoreUnknownInstances": true},
           "Special": {"$className": "Folder", "$ignoreUnknownInstances": true}
         },
-        "Skins": {"$className": "Folder", "$ignoreUnknownInstances": true},
+        "Skins": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true,
+          "Crew Standard": {
+            "$path": "src/thetake/catalog/skins/CrewStandard.model.json"
+          }
+        },
         "Emotes": {"$className": "Folder", "$ignoreUnknownInstances": true},
         "SafehouseFurniture": {"$className": "Folder", "$ignoreUnknownInstances": true},
         "Loadouts": {"$className": "Folder", "$ignoreUnknownInstances": true}
