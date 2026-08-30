@@ -17,7 +17,7 @@ local CATEGORY_MAP = {
 	gear = "Gear",
 	emotes = "Emotes",
 	safehouse_furniture = "SafehouseFurniture",
-	loadouts = "Loadouts",
+	loadouts = "Wardrobe",
 }
 
 local currentCategory = "Guns"
@@ -27,7 +27,11 @@ local cashLabel: TextLabel? = nil
 local profile = {
 	Cash = 0,
 	Owned = {},
-	Equipped = {Gear = "", Primary = "", Secondary = ""},
+	Equipped = {
+		GearSlots = {Base = "", Head = "", Face = "", Torso = "", Back = ""},
+		Primary = "",
+		Secondary = "",
+	},
 }
 
 local function findVaultPanel()
@@ -54,8 +58,15 @@ local function normalizeProfile(result)
 	profile = result
 	profile.Owned = type(profile.Owned) == "table" and profile.Owned or {}
 	profile.Equipped = type(profile.Equipped) == "table" and profile.Equipped or {}
-	if type(profile.Equipped.Gear) ~= "string" then
-		profile.Equipped.Gear = type(profile.Equipped.Skin) == "string" and profile.Equipped.Skin or ""
+	profile.Equipped.GearSlots = type(profile.Equipped.GearSlots) == "table" and profile.Equipped.GearSlots or {
+		Base = type(profile.Equipped.Gear) == "string" and profile.Equipped.Gear or "",
+		Head = "",
+		Face = "",
+		Torso = "",
+		Back = "",
+	}
+	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
+		profile.Equipped.GearSlots[slot] = type(profile.Equipped.GearSlots[slot]) == "string" and profile.Equipped.GearSlots[slot] or ""
 	end
 	profile.Equipped.Primary = type(profile.Equipped.Primary) == "string" and profile.Equipped.Primary or ""
 	profile.Equipped.Secondary = type(profile.Equipped.Secondary) == "string" and profile.Equipped.Secondary or ""
@@ -88,7 +99,7 @@ local function loadProfile()
 	updateCash()
 end
 
-local function addThumbnailFallback(viewport: ViewportFrame, entry: Folder): boolean
+local function addThumbnail(viewport: ViewportFrame, entry: Folder): boolean
 	local assetId = tonumber(entry:GetAttribute("CreatorStoreAssetId")) or 0
 	if assetId <= 0 then
 		return false
@@ -110,12 +121,17 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	viewport.LightColor = Color3.fromRGB(255, 213, 154)
 	viewport.LightDirection = Vector3.new(-1, -1, -1)
 
+	-- Creator Store imports intentionally use Roblox thumbnails. Their raw child meshes
+	-- can reference content that is not authorized for this experience.
+	if tonumber(entry:GetAttribute("CreatorStoreAssetId")) and tonumber(entry:GetAttribute("CreatorStoreAssetId")) > 0 then
+		if addThumbnail(viewport, entry) then
+			return
+		end
+	end
+
 	local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
 	local source = previewRoot:FindFirstChild(itemId)
 	if not source then
-		if addThumbnailFallback(viewport, entry) then
-			return
-		end
 		local fallback = Instance.new("TextLabel")
 		fallback.Size = UDim2.fromScale(1, 1)
 		fallback.BackgroundTransparency = 1
@@ -150,7 +166,6 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	end)
 	if not okBounds or not size then
 		world:Destroy()
-		addThumbnailFallback(viewport, entry)
 		return
 	end
 
@@ -170,43 +185,72 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	viewport.CurrentCamera = previewCamera
 end
 
-local function isEquipped(entry: Folder, itemId: string)
-	local category = tostring(entry:GetAttribute("Category") or "")
-	if category == "Gear" then
-		return profile.Equipped.Gear == itemId
-	end
-	if category == "Guns" then
-		local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
-		if subcategory == "Pistols" then
-			return profile.Equipped.Secondary == itemId
-		end
-		return profile.Equipped.Primary == itemId
-	end
-	return false
+local function isGearEquipped(entry: Folder, itemId: string): boolean
+	local slot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+	return profile.Equipped.GearSlots[slot] == itemId
 end
 
-local function refresh()
+local function isGunEquipped(entry: Folder, itemId: string): boolean
+	local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
+	if subcategory == "Pistols" then
+		return profile.Equipped.Secondary == itemId
+	end
+	return profile.Equipped.Primary == itemId
+end
+
+local function collectEntries()
+	local entries = {}
+	for _, entry in ipairs(index:GetChildren()) do
+		if entry:IsA("Folder") and entry:GetAttribute("Enabled") ~= false then
+			local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
+			if currentCategory == "Wardrobe" then
+				if entry:GetAttribute("Category") == "Gear" and profile.Owned[itemId] == true then
+					table.insert(entries, entry)
+				end
+			elseif entry:GetAttribute("Category") == currentCategory then
+				table.insert(entries, entry)
+			end
+		end
+	end
+	table.sort(entries, function(a, b)
+		local slotA = tostring(a:GetAttribute("GearSlot") or "")
+		local slotB = tostring(b:GetAttribute("GearSlot") or "")
+		if currentCategory == "Wardrobe" and slotA ~= slotB then
+			return slotA < slotB
+		end
+		return tostring(a:GetAttribute("DisplayName")):lower() < tostring(b:GetAttribute("DisplayName")):lower()
+	end)
+	return entries
+end
+
+local function callEquip(itemId: string)
+	local callOk, success, message, result = pcall(function()
+		return equipItem:InvokeServer(itemId)
+	end)
+	if callOk and type(result) == "table" then
+		normalizeProfile(result)
+	end
+	return callOk and success == true, message
+end
+
+local refresh
+refresh = function()
 	if not listFrame or not emptyState then
 		return
 	end
 	clearRows()
 	updateCash()
 
-	local entries = {}
-	for _, entry in ipairs(index:GetChildren()) do
-		if entry:IsA("Folder") and entry:GetAttribute("Enabled") ~= false and entry:GetAttribute("Category") == currentCategory then
-			table.insert(entries, entry)
-		end
-	end
-	table.sort(entries, function(a, b)
-		return tostring(a:GetAttribute("DisplayName")):lower() < tostring(b:GetAttribute("DisplayName")):lower()
-	end)
-
+	local entries = collectEntries()
 	if #entries == 0 then
 		emptyState.Visible = true
-		emptyState.Text = currentCategory == "Gear"
-			and "NO GEAR REGISTERED"
-			or "NO ITEMS REGISTERED\nAdd approved assets to ServerStorage.TheTakeVaultCatalog."
+		if currentCategory == "Wardrobe" then
+			emptyState.Text = "NO OWNED GEAR YET\nBuy Gear first, then dress your avatar here."
+		elseif currentCategory == "Gear" then
+			emptyState.Text = "NO GEAR REGISTERED"
+		else
+			emptyState.Text = "NO ITEMS REGISTERED\nAdd approved assets to ServerStorage.TheTakeVaultCatalog."
+		end
 		listFrame.Visible = false
 		return
 	end
@@ -218,6 +262,8 @@ local function refresh()
 		local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
 		local category = tostring(entry:GetAttribute("Category") or "")
 		local wearable = entry:GetAttribute("Wearable") == true
+		local gearSlot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+		local fitStatus = tostring(entry:GetAttribute("FitStatus") or "")
 
 		local row = Instance.new("Frame")
 		row.Name = itemId
@@ -244,15 +290,17 @@ local function refresh()
 		name.TextXAlignment = Enum.TextXAlignment.Left
 		name.Parent = row
 
-		local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
 		local detail = Instance.new("TextLabel")
 		detail.Position = UDim2.fromOffset(110, 37)
 		detail.Size = UDim2.new(1, -230, 0, 20)
 		detail.BackgroundTransparency = 1
 		detail.Font = Enum.Font.Gotham
-		if category == "Gear" then
-			detail.Text = wearable and "WEARABLE GEAR" or "GEAR • FIT PENDING"
+		if currentCategory == "Wardrobe" then
+			detail.Text = string.upper(gearSlot) .. " SLOT • " .. (fitStatus ~= "" and string.upper(fitStatus) or "READY")
+		elseif category == "Gear" then
+			detail.Text = string.upper(gearSlot) .. " • " .. (wearable and (fitStatus == "AutoFit" and "AUTO FIT" or "WEARABLE") or "FIT PENDING")
 		else
+			local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
 			detail.Text = subcategory ~= "" and subcategory or "VAULT ITEM"
 		end
 		detail.TextColor3 = Color3.fromRGB(157, 178, 194)
@@ -267,7 +315,11 @@ local function refresh()
 		priceLabel.Size = UDim2.new(1, -230, 0, 20)
 		priceLabel.BackgroundTransparency = 1
 		priceLabel.Font = Enum.Font.GothamMedium
-		priceLabel.Text = price > 0 and string.format("%d %s", price, currency) or "INCLUDED"
+		if currentCategory == "Wardrobe" then
+			priceLabel.Text = "OWNED"
+		else
+			priceLabel.Text = price > 0 and string.format("%d %s", price, currency) or "INCLUDED"
+		end
 		priceLabel.TextColor3 = Color3.fromRGB(236, 179, 78)
 		priceLabel.TextSize = 12
 		priceLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -287,46 +339,74 @@ local function refresh()
 		action.Parent = row
 
 		local owned = profile.Owned[itemId] == true
-		local equipped = owned and isEquipped(entry, itemId)
-		local equippable = category == "Guns" or (category == "Gear" and wearable)
+		local activeAction = false
 
-		if equipped then
-			action.Text = "EQUIPPED"
-			action.BackgroundColor3 = Color3.fromRGB(28, 116, 126)
-			action.Active = false
-		elseif owned and equippable then
-			action.Text = "EQUIP"
-		elseif owned then
-			action.Text = "OWNED"
-			action.Active = false
+		if currentCategory == "Wardrobe" then
+			if not wearable then
+				action.Text = "FIT PENDING"
+				action.Active = false
+			elseif isGearEquipped(entry, itemId) then
+				if gearSlot == "Base" then
+					action.Text = "BASE WORN"
+					action.Active = false
+				else
+					action.Text = "REMOVE"
+					activeAction = true
+				end
+			else
+				action.Text = "WEAR"
+				activeAction = true
+			end
+		elseif category == "Gear" then
+			if owned then
+				action.Text = "OWNED"
+				action.Active = false
+			else
+				action.Text = price > 0 and "BUY" or "CLAIM"
+				activeAction = true
+			end
+		elseif category == "Guns" then
+			if owned and isGunEquipped(entry, itemId) then
+				action.Text = "EQUIPPED"
+				action.BackgroundColor3 = Color3.fromRGB(28, 116, 126)
+				action.Active = false
+			elseif owned then
+				action.Text = "EQUIP"
+				activeAction = true
+			else
+				action.Text = price > 0 and "BUY" or "CLAIM"
+				activeAction = true
+			end
 		else
-			action.Text = price > 0 and "BUY" or "CLAIM"
+			if owned then
+				action.Text = "OWNED"
+				action.Active = false
+			else
+				action.Text = price > 0 and "BUY" or "CLAIM"
+				activeAction = true
+			end
 		end
 
-		if action.Active then
+		if activeAction then
+			action.Active = true
 			action.Activated:Connect(function()
 				action.Active = false
 				action.Text = "..."
-				local callOk, success, message, result
-				if profile.Owned[itemId] == true then
-					callOk, success, message, result = pcall(function()
-						return equipItem:InvokeServer(itemId)
-					end)
+
+				if currentCategory == "Wardrobe" then
+					callEquip(itemId)
+				elseif profile.Owned[itemId] == true then
+					callEquip(itemId)
 				else
-					callOk, success, message, result = pcall(function()
+					local callOk, success, message, result = pcall(function()
 						return purchaseItem:InvokeServer(itemId)
 					end)
-				end
-
-				if callOk and type(result) == "table" then
-					normalizeProfile(result)
-				end
-				if callOk and success == true and message == "PURCHASED" and equippable then
-					local equipOk, _, _, equipResult = pcall(function()
-						return equipItem:InvokeServer(itemId)
-					end)
-					if equipOk and type(equipResult) == "table" then
-						normalizeProfile(equipResult)
+					if callOk and type(result) == "table" then
+						normalizeProfile(result)
+					end
+					-- Guns preserve the quick buy-and-equip flow. Gear is dressed only in LOADOUTS.
+					if callOk and success == true and message == "PURCHASED" and category == "Guns" then
+						callEquip(itemId)
 					end
 				end
 				refresh()
@@ -414,4 +494,4 @@ profileChanged.OnClientEvent:Connect(function(newProfile)
 	end
 end)
 
-print("[TheVaultCatalog] automatic preview + purchase UI ready")
+print("[TheVaultCatalog] store + LOADOUT wardrobe UI ready")
