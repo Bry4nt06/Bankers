@@ -21,6 +21,28 @@
         }
       }
     },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "$ignoreUnknownInstances": true,
+      "TheTakeVaultCatalog": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "Guns": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true,
+          "Pistols": {"$className": "Folder", "$ignoreUnknownInstances": true},
+          "SMGs": {"$className": "Folder", "$ignoreUnknownInstances": true},
+          "Rifles": {"$className": "Folder", "$ignoreUnknownInstances": true},
+          "Shotguns": {"$className": "Folder", "$ignoreUnknownInstances": true},
+          "SnipersHeavy": {"$className": "Folder", "$ignoreUnknownInstances": true},
+          "Special": {"$className": "Folder", "$ignoreUnknownInstances": true}
+        },
+        "Skins": {"$className": "Folder", "$ignoreUnknownInstances": true},
+        "Emotes": {"$className": "Folder", "$ignoreUnknownInstances": true},
+        "SafehouseFurniture": {"$className": "Folder", "$ignoreUnknownInstances": true},
+        "Loadouts": {"$className": "Folder", "$ignoreUnknownInstances": true}
+      }
+    },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
