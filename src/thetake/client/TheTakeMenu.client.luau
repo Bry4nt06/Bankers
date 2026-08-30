@@ -7,6 +7,10 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+local theTakeRoot = ReplicatedStorage:WaitForChild("TheTake")
+local sharedFolder = theTakeRoot:WaitForChild("Shared")
+local VaultCatalog = require(sharedFolder:WaitForChild("VaultCatalog"))
+
 local CONFIG_FOLDER_NAME = "TheTakeMenuCameraConfig"
 local CAMERA_READY_ATTRIBUTE = "TheTakeCameraReady"
 local STARTED_ATTRIBUTE = "TheTakeGameplayStarted"
@@ -220,8 +224,8 @@ shadeGradient.Parent = shade
 
 local menuFrame = Instance.new("Frame")
 menuFrame.AnchorPoint = Vector2.new(0, 0.5)
-menuFrame.Position = UDim2.fromScale(0.065, 0.68)
-menuFrame.Size = UDim2.fromOffset(420, 190)
+menuFrame.Position = UDim2.fromScale(0.065, 0.67)
+menuFrame.Size = UDim2.fromOffset(420, 245)
 menuFrame.BackgroundTransparency = 1
 menuFrame.ZIndex = 10
 menuFrame.Parent = gui
@@ -247,28 +251,238 @@ rule.BorderSizePixel = 0
 rule.ZIndex = 10
 rule.Parent = menuFrame
 
-local playButton = Instance.new("TextButton")
-playButton.Position = UDim2.fromOffset(0, 96)
-playButton.Size = UDim2.fromOffset(180, 48)
-playButton.BackgroundTransparency = 1
-playButton.AutoButtonColor = false
-playButton.Font = Enum.Font.GothamMedium
-playButton.Text = "PLAY"
-playButton.TextColor3 = Color3.fromRGB(245, 245, 245)
-playButton.TextSize = 22
-playButton.TextXAlignment = Enum.TextXAlignment.Left
-playButton.TextTransparency = 1
-playButton.ZIndex = 10
-playButton.Parent = menuFrame
+local function createMenuButton(text: string, y: number)
+	local button = Instance.new("TextButton")
+	button.Position = UDim2.fromOffset(0, y)
+	button.Size = UDim2.fromOffset(230, 42)
+	button.BackgroundTransparency = 1
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamMedium
+	button.Text = text
+	button.TextColor3 = Color3.fromRGB(245, 245, 245)
+	button.TextSize = 22
+	button.TextXAlignment = Enum.TextXAlignment.Left
+	button.TextTransparency = 1
+	button.ZIndex = 10
+	button.Parent = menuFrame
 
-local accent = Instance.new("Frame")
-accent.AnchorPoint = Vector2.new(0, 0.5)
-accent.Position = UDim2.new(0, -16, 0.5, 0)
-accent.Size = UDim2.fromOffset(3, 0)
-accent.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-accent.BorderSizePixel = 0
-accent.ZIndex = 11
-accent.Parent = playButton
+	local accent = Instance.new("Frame")
+	accent.AnchorPoint = Vector2.new(0, 0.5)
+	accent.Position = UDim2.new(0, -16, 0.5, 0)
+	accent.Size = UDim2.fromOffset(3, 0)
+	accent.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+	accent.BorderSizePixel = 0
+	accent.ZIndex = 11
+	accent.Parent = button
+
+	button.MouseEnter:Connect(function()
+		TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(3, 30),
+		}):Play()
+	end)
+
+	button.MouseLeave:Connect(function()
+		TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(3, 0),
+		}):Play()
+	end)
+
+	return button
+end
+
+local playButton = createMenuButton("PLAY", 96)
+local vaultButton = createMenuButton("THE VAULT", 144)
+
+-- THE VAULT is a menu-state store. The physical Vault location will live under
+-- ReplicatedStorage.TheTake.Locations.TheVault instead of Broken's round Maps.
+local vaultPanel = Instance.new("Frame")
+vaultPanel.Name = "TheVaultPanel"
+vaultPanel.AnchorPoint = Vector2.new(1, 0.5)
+vaultPanel.Position = UDim2.fromScale(0.955, 0.5)
+vaultPanel.Size = UDim2.fromScale(0.58, 0.76)
+vaultPanel.BackgroundColor3 = Color3.fromRGB(8, 9, 11)
+vaultPanel.BackgroundTransparency = 0.04
+vaultPanel.BorderSizePixel = 0
+vaultPanel.Visible = false
+vaultPanel.ZIndex = 30
+vaultPanel.Parent = gui
+
+local vaultStroke = Instance.new("UIStroke")
+vaultStroke.Color = Color3.fromRGB(90, 94, 101)
+vaultStroke.Transparency = 0.45
+vaultStroke.Thickness = 1
+vaultStroke.Parent = vaultPanel
+
+local vaultTitle = Instance.new("TextLabel")
+vaultTitle.Position = UDim2.fromOffset(34, 24)
+vaultTitle.Size = UDim2.new(1, -160, 0, 48)
+vaultTitle.BackgroundTransparency = 1
+vaultTitle.Font = Enum.Font.GothamBlack
+vaultTitle.Text = "THE VAULT"
+vaultTitle.TextColor3 = Color3.fromRGB(245, 245, 245)
+vaultTitle.TextSize = 36
+vaultTitle.TextXAlignment = Enum.TextXAlignment.Left
+vaultTitle.ZIndex = 31
+vaultTitle.Parent = vaultPanel
+
+local vaultSubtitle = Instance.new("TextLabel")
+vaultSubtitle.Position = UDim2.fromOffset(36, 68)
+vaultSubtitle.Size = UDim2.new(1, -180, 0, 28)
+vaultSubtitle.BackgroundTransparency = 1
+vaultSubtitle.Font = Enum.Font.Gotham
+vaultSubtitle.Text = "ARMORY  /  STYLE  /  SAFEHOUSE"
+vaultSubtitle.TextColor3 = Color3.fromRGB(150, 154, 162)
+vaultSubtitle.TextSize = 13
+vaultSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+vaultSubtitle.ZIndex = 31
+vaultSubtitle.Parent = vaultPanel
+
+local backButton = Instance.new("TextButton")
+backButton.AnchorPoint = Vector2.new(1, 0)
+backButton.Position = UDim2.new(1, -30, 0, 29)
+backButton.Size = UDim2.fromOffset(92, 38)
+backButton.BackgroundTransparency = 1
+backButton.Font = Enum.Font.GothamMedium
+backButton.Text = "BACK"
+backButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+backButton.TextSize = 15
+backButton.ZIndex = 32
+backButton.Parent = vaultPanel
+
+local divider = Instance.new("Frame")
+divider.Position = UDim2.fromOffset(32, 108)
+divider.Size = UDim2.new(1, -64, 0, 1)
+divider.BackgroundColor3 = Color3.fromRGB(77, 80, 86)
+divider.BackgroundTransparency = 0.45
+divider.BorderSizePixel = 0
+divider.ZIndex = 31
+divider.Parent = vaultPanel
+
+local categoryFrame = Instance.new("Frame")
+categoryFrame.Position = UDim2.fromOffset(32, 128)
+categoryFrame.Size = UDim2.new(0.32, -42, 1, -158)
+categoryFrame.BackgroundTransparency = 1
+categoryFrame.ZIndex = 31
+categoryFrame.Parent = vaultPanel
+
+local categoryLayout = Instance.new("UIListLayout")
+categoryLayout.Padding = UDim.new(0, 8)
+categoryLayout.FillDirection = Enum.FillDirection.Vertical
+categoryLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+categoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
+categoryLayout.Parent = categoryFrame
+
+local contentFrame = Instance.new("Frame")
+contentFrame.Position = UDim2.new(0.34, 0, 0, 128)
+contentFrame.Size = UDim2.new(0.66, -32, 1, -158)
+contentFrame.BackgroundColor3 = Color3.fromRGB(16, 18, 21)
+contentFrame.BackgroundTransparency = 0.08
+contentFrame.BorderSizePixel = 0
+contentFrame.ZIndex = 31
+contentFrame.Parent = vaultPanel
+
+local contentTitle = Instance.new("TextLabel")
+contentTitle.Position = UDim2.fromOffset(28, 24)
+contentTitle.Size = UDim2.new(1, -56, 0, 38)
+contentTitle.BackgroundTransparency = 1
+contentTitle.Font = Enum.Font.GothamBold
+contentTitle.TextColor3 = Color3.fromRGB(245, 245, 245)
+contentTitle.TextSize = 25
+contentTitle.TextXAlignment = Enum.TextXAlignment.Left
+contentTitle.ZIndex = 32
+contentTitle.Parent = contentFrame
+
+local contentDescription = Instance.new("TextLabel")
+contentDescription.Position = UDim2.fromOffset(28, 70)
+contentDescription.Size = UDim2.new(1, -56, 0, 62)
+contentDescription.BackgroundTransparency = 1
+contentDescription.Font = Enum.Font.Gotham
+contentDescription.TextColor3 = Color3.fromRGB(174, 178, 185)
+contentDescription.TextSize = 15
+contentDescription.TextWrapped = true
+contentDescription.TextXAlignment = Enum.TextXAlignment.Left
+contentDescription.TextYAlignment = Enum.TextYAlignment.Top
+contentDescription.ZIndex = 32
+contentDescription.Parent = contentFrame
+
+local emptyState = Instance.new("TextLabel")
+emptyState.AnchorPoint = Vector2.new(0.5, 0.5)
+emptyState.Position = UDim2.fromScale(0.5, 0.61)
+emptyState.Size = UDim2.new(1, -70, 0, 80)
+emptyState.BackgroundTransparency = 1
+emptyState.Font = Enum.Font.GothamMedium
+emptyState.Text = "CATALOG FOUNDATION READY\nItems and ownership will be connected next."
+emptyState.TextColor3 = Color3.fromRGB(112, 116, 124)
+emptyState.TextSize = 14
+emptyState.TextWrapped = true
+emptyState.TextXAlignment = Enum.TextXAlignment.Center
+emptyState.TextYAlignment = Enum.TextYAlignment.Center
+emptyState.ZIndex = 32
+emptyState.Parent = contentFrame
+
+local categoryButtons = {}
+local selectedCategoryId = nil
+
+local function selectVaultCategory(category)
+	selectedCategoryId = category.id
+	contentTitle.Text = category.name
+	contentDescription.Text = category.description
+
+	for id, button in pairs(categoryButtons) do
+		if id == selectedCategoryId then
+			button.TextColor3 = Color3.fromRGB(255, 255, 255)
+			button.BackgroundTransparency = 0.82
+		else
+			button.TextColor3 = Color3.fromRGB(158, 162, 170)
+			button.BackgroundTransparency = 1
+		end
+	end
+end
+
+for index, category in ipairs(VaultCatalog) do
+	local button = Instance.new("TextButton")
+	button.Name = category.id
+	button.LayoutOrder = index
+	button.Size = UDim2.new(1, 0, 0, 46)
+	button.BackgroundColor3 = Color3.fromRGB(44, 47, 53)
+	button.BackgroundTransparency = 1
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamMedium
+	button.Text = category.name
+	button.TextColor3 = Color3.fromRGB(158, 162, 170)
+	button.TextSize = category.id == "safehouse_furniture" and 13 or 15
+	button.TextXAlignment = Enum.TextXAlignment.Left
+	button.ZIndex = 32
+	button.Parent = categoryFrame
+	categoryButtons[category.id] = button
+
+	button.Activated:Connect(function()
+		selectVaultCategory(category)
+	end)
+end
+
+if VaultCatalog[1] then
+	selectVaultCategory(VaultCatalog[1])
+end
+
+local function setVaultOpen(open: boolean)
+	vaultPanel.Visible = open
+	menuFrame.Visible = not open
+	if open then
+		print("[TheVault] store opened from cinematic menu")
+	else
+		print("[TheVault] returned to main menu")
+	end
+end
+
+vaultButton.Activated:Connect(function()
+	setVaultOpen(true)
+end)
+
+backButton.Activated:Connect(function()
+	setVaultOpen(false)
+end)
 
 bootGui:Destroy()
 TweenService:Create(fade, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -285,22 +499,13 @@ local function showMenu()
 	TweenService:Create(playButton, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		TextTransparency = 0,
 	}):Play()
-	print("[TheTakeMenu] THE TAKE PLAY menu revealed")
+	TweenService:Create(vaultButton, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		TextTransparency = 0,
+	}):Play()
+	print("[TheTakeMenu] THE TAKE menu revealed with THE VAULT")
 end
 
 task.delay(MENU_REVEAL_DELAY, showMenu)
-
-playButton.MouseEnter:Connect(function()
-	TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Size = UDim2.fromOffset(3, 32),
-	}):Play()
-end)
-
-playButton.MouseLeave:Connect(function()
-	TweenService:Create(accent, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Size = UDim2.fromOffset(3, 0),
-	}):Play()
-end)
 
 local playSelected = false
 playButton.Activated:Connect(function()
@@ -309,6 +514,8 @@ playButton.Activated:Connect(function()
 	end
 	playSelected = true
 	playButton.Active = false
+	vaultButton.Active = false
+	vaultPanel.Visible = false
 
 	TweenService:Create(fade, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 		BackgroundTransparency = 0,
