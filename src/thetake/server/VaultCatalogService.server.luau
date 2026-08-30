@@ -7,20 +7,16 @@ local shared = theTakeRoot:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 
 local skinsFolder = sourceRoot:WaitForChild("Skins")
-local defaultSkin = skinsFolder:FindFirstChild(Config.DefaultSkinId)
-if not defaultSkin then
-	defaultSkin = Instance.new("Configuration")
-	defaultSkin.Name = Config.DefaultSkinId
-	defaultSkin.Parent = skinsFolder
+local defaultSkin = nil
+for _, child in ipairs(skinsFolder:GetChildren()) do
+	if child:GetAttribute("VaultItemId") == Config.DefaultSkinId then
+		defaultSkin = child
+		break
+	end
 end
-defaultSkin:SetAttribute("VaultItemId", Config.DefaultSkinId)
-defaultSkin:SetAttribute("VaultDisplayName", Config.DefaultSkinDisplayName)
-defaultSkin:SetAttribute("VaultPrice", Config.DefaultSkinPrice)
-defaultSkin:SetAttribute("VaultCurrency", Config.DefaultSkinCurrency)
-defaultSkin:SetAttribute("VaultEnabled", true)
-defaultSkin:SetAttribute("VaultWearable", true)
-defaultSkin:SetAttribute("VaultDefaultOwned", true)
-defaultSkin:SetAttribute("SkinType", "ProceduralDefaultCrew")
+if not defaultSkin then
+	warn("[TheVaultCatalog] physical Crew Standard skin is missing from ServerStorage.TheTakeVaultCatalog.Skins")
+end
 
 local runtimeIndex = theTakeRoot:FindFirstChild("VaultStoreIndex")
 if runtimeIndex then
