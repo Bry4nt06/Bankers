@@ -9,16 +9,6 @@ local FitConfig = {}
 -- a standard Roblox Accessory. Leave it false/nil when native attachments fit well.
 -- Keeping the final values here means corrections survive Creator Store re-imports.
 FitConfig.Items = {
-	["gear-american-tactical-vest"] = {
-		Scale = 0.90,
-		Offset = Vector3.new(0, -0.02, 0),
-		Rotation = Vector3.new(0, 0, 0),
-	},
-	["gear-iotv"] = {
-		Scale = 0.86,
-		Offset = Vector3.new(0, -0.03, 0),
-		Rotation = Vector3.new(0, 0, 0),
-	},
 	["gear-plate-carrier"] = {
 		Scale = 0.88,
 		Offset = Vector3.new(0, -0.02, 0),
@@ -27,21 +17,6 @@ FitConfig.Items = {
 	["gear-tactical-helmet"] = {
 		Scale = 0.91,
 		Offset = Vector3.new(0, 0.04, 0),
-		Rotation = Vector3.new(0, 0, 0),
-	},
-	["gear-ir-helmet"] = {
-		Scale = 0.91,
-		Offset = Vector3.new(0, 0.04, 0),
-		Rotation = Vector3.new(0, 0, 0),
-	},
-	["gear-helmet-model"] = {
-		Scale = 0.91,
-		Offset = Vector3.new(0, 0.03, 0),
-		Rotation = Vector3.new(0, 0, 0),
-	},
-	["gear-backpack"] = {
-		Scale = 0.88,
-		Offset = Vector3.new(0, -0.02, 0),
 		Rotation = Vector3.new(0, 0, 0),
 	},
 	["gear-mask"] = {
@@ -53,6 +28,48 @@ FitConfig.Items = {
 		Scale = 0.82,
 		Offset = Vector3.new(0, -0.03, 0),
 		Rotation = Vector3.new(0, 0, 0),
+	},
+	["gear-opening-balaclava-goggles"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-classic-balaclava"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-ski-mask"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-hex-carrier"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-tactical-vest"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-black-vest"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
+	},
+	["gear-opening-military-duffel"] = {
+		Scale = 1.00,
+		Offset = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		UseAutoFit = true,
 	},
 }
 
