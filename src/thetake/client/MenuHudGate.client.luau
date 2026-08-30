@@ -7,6 +7,9 @@ local STARTED_ATTRIBUTE = "TheTakeGameplayStarted"
 local TAKE_GUI_NAMES = {
 	TheTakeBootGui = true,
 	TheTakeMenuGui = true,
+	-- Studio-only Vault fitting controls are part of THE TAKE frontend and must
+	-- remain visible while donor gameplay HUDs are suppressed.
+	TheTakeVaultFitGui = true,
 }
 
 local savedEnabled = setmetatable({}, { __mode = "k" })
@@ -17,6 +20,7 @@ end
 
 local function gateScreenGui(gui: ScreenGui)
 	if isTakeGui(gui) then
+		gui.Enabled = true
 		return
 	end
 
