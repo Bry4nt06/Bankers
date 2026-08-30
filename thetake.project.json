@@ -37,11 +37,11 @@
           "SnipersHeavy": {"$className": "Folder", "$ignoreUnknownInstances": true},
           "Special": {"$className": "Folder", "$ignoreUnknownInstances": true}
         },
-        "Skins": {
+        "Gear": {
           "$className": "Folder",
           "$ignoreUnknownInstances": true,
           "Crew Standard": {
-            "$path": "src/thetake/catalog/skins/CrewStandard.model.json"
+            "$path": "src/thetake/catalog/gear/CrewStandard.model.json"
           }
         },
         "Emotes": {"$className": "Folder", "$ignoreUnknownInstances": true},
