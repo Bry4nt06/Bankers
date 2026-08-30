@@ -6,16 +6,21 @@ local theTakeRoot = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTakeRoot:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 
-local skinsFolder = sourceRoot:WaitForChild("Skins")
-local defaultSkin = nil
-for _, child in ipairs(skinsFolder:GetChildren()) do
-	if child:GetAttribute("VaultItemId") == Config.DefaultSkinId then
-		defaultSkin = child
+local gearFolder = sourceRoot:WaitForChild("Gear")
+local defaultGear = nil
+for _, child in ipairs(gearFolder:GetChildren()) do
+	if child:GetAttribute("VaultItemId") == Config.DefaultGearId then
+		defaultGear = child
 		break
 	end
 end
-if not defaultSkin then
-	warn("[TheVaultCatalog] physical Crew Standard skin is missing from ServerStorage.TheTakeVaultCatalog.Skins")
+if not defaultGear then
+	warn("[TheVaultCatalog] physical Crew Standard gear is missing from ServerStorage.TheTakeVaultCatalog.Gear")
+end
+
+local legacySkins = sourceRoot:FindFirstChild("Skins")
+if legacySkins then
+	warn("[TheVaultCatalog] legacy Skins folder detected; it is ignored. Use TheTakeVaultCatalog.Gear.")
 end
 
 local runtimeIndex = theTakeRoot:FindFirstChild("VaultStoreIndex")
@@ -36,7 +41,7 @@ previewRoot.Parent = theTakeRoot
 
 local VALID_TOP_LEVEL = {
 	Guns = true,
-	Skins = true,
+	Gear = true,
 	Emotes = true,
 	SafehouseFurniture = true,
 	Loadouts = true,
@@ -89,9 +94,7 @@ local function stripPreviewBehavior(instance: Instance)
 	for _, descendant in ipairs(all) do
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 			descendant:Destroy()
-		elseif descendant:IsA("Sound") then
-			descendant:Destroy()
-		elseif descendant:IsA("ProximityPrompt") then
+		elseif descendant:IsA("Sound") or descendant:IsA("ProximityPrompt") then
 			descendant:Destroy()
 		elseif descendant:IsA("BasePart") then
 			descendant.Anchored = true
@@ -133,11 +136,8 @@ local function rebuild()
 			local categoryParts = getCategoryParts(item)
 			local category = categoryParts[1] or "Unknown"
 			local subcategory = categoryParts[2] or ""
-			local wearable = category == "Skins" and item:GetAttribute("VaultWearable") == true
+			local wearable = category == "Gear" and item:GetAttribute("VaultWearable") == true
 			local enabled = item:GetAttribute("VaultEnabled") ~= false
-			if category == "Skins" and not wearable then
-				enabled = false
-			end
 
 			local itemId = item:GetAttribute("VaultItemId")
 			if type(itemId) ~= "string" or itemId == "" then
@@ -149,6 +149,7 @@ local function rebuild()
 				previewCount += 1
 			end
 
+			local creatorStoreAssetId = tonumber(item:GetAttribute("CreatorStoreAssetId")) or 0
 			local entry = Instance.new("Folder")
 			entry.Name = itemId
 			entry:SetAttribute("ItemId", itemId)
@@ -162,7 +163,10 @@ local function rebuild()
 			entry:SetAttribute("PreviewAvailable", previewAvailable)
 			entry:SetAttribute("Wearable", wearable)
 			entry:SetAttribute("DefaultOwned", item:GetAttribute("VaultDefaultOwned") == true)
-			entry:SetAttribute("SkinType", item:GetAttribute("SkinType") or "")
+			entry:SetAttribute("GearType", item:GetAttribute("GearType") or item:GetAttribute("SkinType") or "")
+			entry:SetAttribute("FitStatus", item:GetAttribute("FitStatus") or (wearable and "Ready" or ""))
+			entry:SetAttribute("CreatorStoreAssetId", creatorStoreAssetId)
+			entry:SetAttribute("SourceName", item:GetAttribute("CreatorStoreSourceName") or "")
 			entry.Parent = runtimeIndex
 			count += 1
 		end
