@@ -10,8 +10,8 @@ local camera = workspace.CurrentCamera
 
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
-local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 local SkinRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
+local previewRoot = theTake:WaitForChild("VaultPreviewModels", 20)
 
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
 local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
@@ -142,8 +142,17 @@ local function refreshAvatarSkin()
 		return
 	end
 	SkinRenderer.Clear(avatarRig)
-	if player:GetAttribute("VaultEquippedSkin") == Config.DefaultSkinId then
-		SkinRenderer.ApplyDefaultCrew(avatarRig)
+	if not previewRoot then
+		return
+	end
+
+	local equippedId = player:GetAttribute("VaultEquippedSkin")
+	if type(equippedId) ~= "string" or equippedId == "" then
+		return
+	end
+	local template = previewRoot:FindFirstChild(equippedId)
+	if template then
+		SkinRenderer.ApplyTemplate(avatarRig, template)
 	end
 end
 
@@ -184,6 +193,13 @@ local function createAvatarDisplay()
 end
 
 player:GetAttributeChangedSignal("VaultEquippedSkin"):Connect(refreshAvatarSkin)
+if previewRoot then
+	previewRoot.ChildAdded:Connect(function(child)
+		if child.Name == player:GetAttribute("VaultEquippedSkin") then
+			task.defer(refreshAvatarSkin)
+		end
+	end)
+end
 
 local function styleVaultPanel(panel: Frame)
 	panel.AnchorPoint = Vector2.new(0, 0.5)
