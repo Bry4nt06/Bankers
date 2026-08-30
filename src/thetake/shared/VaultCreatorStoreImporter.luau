@@ -1,4 +1,5 @@
 local AssetService = game:GetService("AssetService")
+local InsertService = game:GetService("InsertService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
@@ -116,16 +117,16 @@ local function targetFolder(root: Folder, category: string, record): Folder?
 	return folder
 end
 
-local function setCommonAttributes(item: Instance, category: string, record)
+local function setCommonAttributes(item: Instance, category: string, record, sourceAssetId: number, sourceCreator: string, sourceName: string)
 	item:SetAttribute("VaultItemId", record.itemId)
 	item:SetAttribute("VaultDisplayName", record.displayName)
 	item:SetAttribute("VaultPrice", record.price or 0)
 	item:SetAttribute("VaultCurrency", "Cash")
 	item:SetAttribute("VaultEnabled", true)
 	item:SetAttribute("CreatorStoreImported", true)
-	item:SetAttribute("CreatorStoreAssetId", record.assetId or 0)
-	item:SetAttribute("CreatorStoreCreator", record.creator or "")
-	item:SetAttribute("CreatorStoreSourceName", record.displayName)
+	item:SetAttribute("CreatorStoreAssetId", sourceAssetId)
+	item:SetAttribute("CreatorStoreCreator", sourceCreator)
+	item:SetAttribute("CreatorStoreSourceName", sourceName)
 
 	if category == "Gear" then
 		item:SetAttribute("VaultWearable", true)
@@ -139,7 +140,74 @@ local function setCommonAttributes(item: Instance, category: string, record)
 	end
 end
 
-local function importAsset(root: Folder, category: string, record, replaceExisting: boolean)
+local function searchQueries(category: string, record)
+	local queries = {record.displayName}
+	if category == "Guns" then
+		table.insert(queries, tostring(record.subcategory or "gun"))
+	elseif category == "Gear" then
+		if string.find(string.lower(record.displayName), "helmet", 1, true) then
+			table.insert(queries, "tactical helmet")
+		elseif string.find(string.lower(record.displayName), "mask", 1, true) then
+			table.insert(queries, "tactical mask")
+		elseif string.find(string.lower(record.displayName), "backpack", 1, true) then
+			table.insert(queries, "tactical backpack")
+		else
+			table.insert(queries, "tactical vest")
+		end
+	elseif category == "Emotes" then
+		table.insert(queries, "animation pack")
+	elseif category == "SafehouseFurniture" then
+		local lowered = string.lower(record.displayName)
+		if string.find(lowered, "laptop", 1, true) then
+			table.insert(queries, "laptop")
+		elseif string.find(lowered, "locker", 1, true) then
+			table.insert(queries, "locker")
+		else
+			table.insert(queries, "sofa")
+		end
+	end
+	return queries
+end
+
+local function searchFreeModel(category: string, record, usedAssetIds)
+	for _, query in ipairs(searchQueries(category, record)) do
+		local ok, wrapped = pcall(function()
+			return InsertService:GetFreeModelsAsync(query, 0)
+		end)
+		if ok and type(wrapped) == "table" then
+			local page = wrapped[1]
+			local results = type(page) == "table" and page.Results or nil
+			if type(results) == "table" then
+				for _, result in ipairs(results) do
+					local assetId = tonumber(result.AssetId)
+					if assetId and assetId > 0 and not usedAssetIds[assetId] then
+						return assetId, tostring(result.CreatorName or "Creator Store"), tostring(result.Name or record.displayName), query
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function loadFreeModel(category: string, record, usedAssetIds)
+	local assetId, creator, sourceName, query = searchFreeModel(category, record, usedAssetIds)
+	if not assetId then
+		return nil, "NO_FREE_MODEL_MATCH"
+	end
+
+	local ok, loaded = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	if not ok or not loaded then
+		return nil, tostring(loaded)
+	end
+	usedAssetIds[assetId] = true
+	print(string.format("[VaultImporter] Store search '%s' -> %s (%d) by %s", tostring(query), sourceName, assetId, creator))
+	return loaded, nil, assetId, creator, sourceName
+end
+
+local function importAsset(root: Folder, category: string, record, replaceExisting: boolean, usedAssetIds)
 	local destination = targetFolder(root, category, record)
 	if not destination then
 		return false, "TARGET_FOLDER_MISSING"
@@ -153,16 +221,15 @@ local function importAsset(root: Folder, category: string, record, replaceExisti
 		existing:Destroy()
 	end
 
-	local ok, loaded = pcall(function()
-		return AssetService:LoadAssetAsync(record.assetId)
-	end)
-	if not ok or not loaded then
-		return false, tostring(loaded)
+	-- Search the actual Free Models catalog instead of trusting a web Store page id.
+	local loaded, errorMessage, sourceAssetId, sourceCreator, sourceName = loadFreeModel(category, record, usedAssetIds)
+	if not loaded then
+		return false, errorMessage
 	end
 
 	loaded.Name = record.displayName
 	sanitize(loaded)
-	setCommonAttributes(loaded, category, record)
+	setCommonAttributes(loaded, category, record, sourceAssetId, sourceCreator, sourceName)
 	loaded.Parent = destination
 	return true, "IMPORTED"
 end
@@ -189,10 +256,11 @@ function Importer.Run(options)
 	local imported = 0
 	local skipped = 0
 	local failed = 0
+	local usedAssetIds = {}
 
 	for _, category in ipairs({"Guns", "Gear", "Emotes", "SafehouseFurniture"}) do
 		for _, record in ipairs(Manifest[category]) do
-			local ok, status = importAsset(root, category, record, replaceExisting)
+			local ok, status = importAsset(root, category, record, replaceExisting, usedAssetIds)
 			if ok and status == "IMPORTED" then
 				imported += 1
 				print(string.format("[VaultImporter] imported %s / %s", category, record.displayName))
@@ -200,7 +268,7 @@ function Importer.Run(options)
 				skipped += 1
 			else
 				failed += 1
-				warn(string.format("[VaultImporter] FAILED %s / %s (%s): %s", category, record.displayName, tostring(record.assetId), status))
+				warn(string.format("[VaultImporter] FAILED %s / %s: %s", category, record.displayName, status))
 			end
 		end
 	end
