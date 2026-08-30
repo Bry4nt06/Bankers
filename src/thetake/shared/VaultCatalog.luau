@@ -22,7 +22,7 @@ local VaultCatalog = {
 	{
 		id = "loadouts",
 		name = "LOADOUTS",
-		description = "Saved equipment configurations and future loadout slots.",
+		description = "Dress your avatar using Gear you already own. Mix head, face, torso, and back pieces by slot.",
 	},
 }
 
