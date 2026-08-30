@@ -2,12 +2,15 @@ local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 local SkinRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
 local storeIndex = theTake:WaitForChild("VaultStoreIndex")
+local catalogRoot = ServerStorage:WaitForChild("TheTakeVaultCatalog")
+local skinsFolder = catalogRoot:WaitForChild("Skins")
 
 local remotes = theTake:FindFirstChild("VaultRemotes")
 if remotes then
@@ -109,6 +112,15 @@ local function applyPlayerAttributes(player: Player, profile)
 	player:SetAttribute("VaultEquippedSecondary", profile.Equipped.Secondary)
 end
 
+local function findSkinTemplate(itemId: string): Instance?
+	for _, skin in ipairs(skinsFolder:GetChildren()) do
+		if skin:GetAttribute("VaultItemId") == itemId then
+			return skin
+		end
+	end
+	return nil
+end
+
 local function applyEquippedSkin(player: Player, character: Model?)
 	if not character then
 		return
@@ -119,8 +131,14 @@ local function applyEquippedSkin(player: Player, character: Model?)
 	end
 
 	SkinRenderer.Clear(character)
-	if profile.Equipped.Skin == Config.DefaultSkinId then
-		SkinRenderer.ApplyDefaultCrew(character)
+	local template = findSkinTemplate(profile.Equipped.Skin)
+	if not template then
+		warn(string.format("[TheVaultProfile] equipped skin template missing: %s", profile.Equipped.Skin))
+		return
+	end
+
+	if not SkinRenderer.ApplyTemplate(character, template) then
+		warn(string.format("[TheVaultProfile] skin template could not attach: %s", profile.Equipped.Skin))
 	end
 end
 
