@@ -10,6 +10,8 @@
       "VaultWearable": {"Bool": true},
       "VaultDefaultOwned": {"Bool": true},
       "GearType": {"String": "ModelWearable"},
+      "GearSlot": {"String": "Base"},
+      "FitStatus": {"String": "Ready"},
       "GearTemplateVersion": {"Float64": 1}
     }
   },
