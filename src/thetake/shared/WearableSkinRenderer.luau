@@ -389,8 +389,13 @@ function Renderer.ApplyGear(rig: Model, template: Instance, slot: string): boole
 	group:SetAttribute("GearSlot", slot)
 	group.Parent = overlay
 
+	local fit = FitConfig.Resolve(template)
 	local success
-	if hasExplicitAttachmentTemplate(template) then
+	if fit.UseAutoFit then
+		-- Studio fitting can deliberately bypass a native Accessory attachment so
+		-- scale/offset/rotation controls affect the item immediately.
+		success = applyAutoFit(rig, template, slot, group)
+	elseif hasExplicitAttachmentTemplate(template) then
 		success = applyExplicitTemplate(rig, template, group)
 	elseif applyNativeAccessories(rig, template) then
 		success = true
