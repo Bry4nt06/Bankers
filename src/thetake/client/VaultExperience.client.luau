@@ -14,6 +14,9 @@ local MENU_MODE_ATTRIBUTE = "TheTakeMenuMode"
 local STARTED_ATTRIBUTE = "TheTakeGameplayStarted"
 local BIND_NAME = "TheTakeVaultCameraAuthority"
 local CAMERA_PRIORITY = Enum.RenderPriority.Last.Value + 10
+local GEAR_OVERLAY_NAME = "TheTakeWearableGear"
+local LEGACY_GEAR_OVERLAY_NAME = "TheTakeWearableSkin"
+local MANAGED_ACCESSORY_ATTRIBUTE = "TheTakeManagedAccessory"
 
 local ENTRY_DURATION = 0.75
 local SETTLE_DURATION = 1.15
@@ -120,30 +123,24 @@ local function resetRigPose(rig: Model)
 		humanoid.AutoRotate = false
 	end
 
-	-- The showroom clones the live character. A clone can inherit the exact
-	-- Motor6D animation offsets from the frame it was copied on (run, jump, emote,
-	-- weapon stance, etc.). Clear those offsets before freezing the display rig.
 	for _, descendant in ipairs(rig:GetDescendants()) do
-		if descendant:IsA("Motor6D") then
+		if descendant:IsA("Animator") then
+			descendant:Destroy()
+		elseif descendant:IsA("Motor6D") then
 			descendant.Transform = CFrame.identity
 		end
 	end
 end
 
 local function disableRigBehavior(rig: Model)
-	resetRigPose(rig)
-
+	-- Destroy behavior before the final pose reset. The old implementation reset
+	-- Motor6Ds first, then a surviving animation/gameplay script could write the
+	-- arm pose back before the clone was frozen.
 	for _, descendant in ipairs(rig:GetDescendants()) do
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 			descendant:Destroy()
 		elseif descendant:IsA("Tool") then
 			descendant:Destroy()
-		elseif descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			descendant.CanCollide = false
-			descendant.CanTouch = false
-			descendant.CanQuery = false
-			descendant.LocalTransparencyModifier = 0
 		elseif descendant:IsA("Sound") then
 			descendant.SoundId = ""
 			descendant.Volume = 0
@@ -152,11 +149,165 @@ local function disableRigBehavior(rig: Model)
 		end
 	end
 
+	resetRigPose(rig)
+
+	for _, descendant in ipairs(rig:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+			descendant.LocalTransparencyModifier = 0
+		end
+	end
+
+	-- Apply the neutral transform again after every script/Animator is gone and
+	-- every part is frozen. This also protects against donor weapon scripts that
+	-- manipulate Motor6Ds directly rather than playing a normal AnimationTrack.
+	resetRigPose(rig)
+
 	local humanoid = rig:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 		humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 	end
+end
+
+local function sanitizeMirroredPart(part: BasePart)
+	for _, descendant in ipairs(part:GetDescendants()) do
+		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+			descendant:Destroy()
+		elseif descendant:IsA("WeldConstraint") or descendant:IsA("Motor6D") or descendant:IsA("Weld") then
+			descendant:Destroy()
+		elseif descendant:IsA("Sound") then
+			descendant:Destroy()
+		end
+	end
+	part.Anchored = false
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = false
+	part.Massless = true
+end
+
+local function mirrorOverlayParts(sourceCharacter: Model, displayRig: Model, overlayName: string)
+	local sourceOverlay = sourceCharacter:FindFirstChild(overlayName)
+	if not sourceOverlay then
+		return 0
+	end
+
+	local mirror = displayRig:FindFirstChild(GEAR_OVERLAY_NAME)
+	if not mirror then
+		mirror = Instance.new("Folder")
+		mirror.Name = GEAR_OVERLAY_NAME
+		mirror.Parent = displayRig
+	end
+
+	local copied = 0
+	for _, sourcePart in ipairs(sourceOverlay:GetDescendants()) do
+		if sourcePart:IsA("BasePart") then
+			local gearWeld = sourcePart:FindFirstChild("GearWeld")
+			local sourceTarget = gearWeld and gearWeld:IsA("WeldConstraint") and gearWeld.Part0 or nil
+			if sourceTarget and sourceTarget:IsA("BasePart") and sourceTarget:IsDescendantOf(sourceCharacter) then
+				local displayTarget = displayRig:FindFirstChild(sourceTarget.Name, true)
+				if displayTarget and displayTarget:IsA("BasePart") then
+					local relative = sourceTarget.CFrame:ToObjectSpace(sourcePart.CFrame)
+					local clone = sourcePart:Clone()
+					sanitizeMirroredPart(clone)
+					clone.CFrame = displayTarget.CFrame * relative
+					clone.Parent = mirror
+					copied += 1
+				end
+			end
+		end
+	end
+	return copied
+end
+
+local function mirrorManagedAccessories(sourceCharacter: Model, displayRig: Model)
+	local humanoid = displayRig:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return 0
+	end
+
+	local copied = 0
+	for _, source in ipairs(sourceCharacter:GetChildren()) do
+		if source:IsA("Accessory") and source:GetAttribute(MANAGED_ACCESSORY_ATTRIBUTE) == true then
+			local existing = displayRig:FindFirstChild(source.Name)
+			if existing and existing:IsA("Accessory") then
+				existing:Destroy()
+			end
+
+			local clone = source:Clone()
+			clone:SetAttribute(MANAGED_ACCESSORY_ATTRIBUTE, true)
+			for _, descendant in ipairs(clone:GetDescendants()) do
+				if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+					descendant:Destroy()
+				elseif descendant:IsA("BasePart") then
+					descendant.Anchored = false
+					descendant.CanCollide = false
+					descendant.CanTouch = false
+					descendant.CanQuery = false
+					descendant.Massless = true
+				end
+			end
+			local ok = pcall(function()
+				humanoid:AddAccessory(clone)
+			end)
+			if ok and clone.Parent == displayRig then
+				copied += 1
+			else
+				clone:Destroy()
+			end
+		end
+	end
+	return copied
+end
+
+local function createNeutralAvatar(): Model?
+	local liveCharacter = player.Character
+	local liveHumanoid = liveCharacter and liveCharacter:FindFirstChildOfClass("Humanoid") or nil
+	local description = nil
+	local rigType = Enum.HumanoidRigType.R15
+
+	if liveHumanoid then
+		rigType = liveHumanoid.RigType
+		local okApplied, applied = pcall(function()
+			return liveHumanoid:GetAppliedDescription()
+		end)
+		if okApplied and applied then
+			description = applied
+		end
+	end
+
+	if not description then
+		local okDescription, result = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+		end)
+		if okDescription then
+			description = result
+		end
+	end
+	if not description then
+		return nil
+	end
+
+	local okRig, rig = pcall(function()
+		return Players:CreateHumanoidModelFromDescription(description, rigType)
+	end)
+	if not okRig or not rig or not rig:IsA("Model") then
+		return nil
+	end
+
+	-- Build the showroom from a fresh avatar description instead of cloning the
+	-- donor gameplay character. This prevents weapon/interaction scripts that
+	-- modified shoulder C0/C1 from becoming a permanent showroom stance.
+	if liveCharacter then
+		mirrorOverlayParts(liveCharacter, rig, GEAR_OVERLAY_NAME)
+		mirrorOverlayParts(liveCharacter, rig, LEGACY_GEAR_OVERLAY_NAME)
+		mirrorManagedAccessories(liveCharacter, rig)
+	end
+	return rig
 end
 
 local function placeAvatarRig(rig: Model)
@@ -170,38 +321,7 @@ local function placeAvatarRig(rig: Model)
 	local facing = CFrame.lookAt(standPosition, cameraTarget)
 	rig:PivotTo(facing * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
 	avatarRig = rig
-	print("[TheVault] player avatar display ready in neutral stance and facing camera")
-end
-
-local function cloneLiveCharacter(): Model?
-	local character = player.Character
-	if not character or not character.Parent then
-		return nil
-	end
-
-	local previousArchivable = character.Archivable
-	character.Archivable = true
-	local ok, clone = pcall(function()
-		return character:Clone()
-	end)
-	character.Archivable = previousArchivable
-	if ok and clone and clone:IsA("Model") then
-		return clone
-	end
-	return nil
-end
-
-local function createFallbackAvatar(): Model?
-	local okDescription, description = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(player.UserId)
-	end)
-	if not okDescription or not description then
-		return nil
-	end
-	local okRig, rig = pcall(function()
-		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
-	end)
-	return okRig and rig or nil
+	print("[TheVault] neutral showroom avatar rebuilt from HumanoidDescription")
 end
 
 local function rebuildAvatarDisplay()
@@ -216,14 +336,15 @@ local function rebuildAvatarDisplay()
 		return
 	end
 
-	-- Give replicated server-side gear welds a moment to reach this client before cloning.
+	-- Allow server-side purchase/equip gear replication to settle, then rebuild a
+	-- fresh neutral mannequin and mirror only the custom Vault gear onto it.
 	task.delay(0.12, function()
 		if not vaultOpen or generation ~= avatarGeneration then
 			return
 		end
-		local rig = cloneLiveCharacter() or createFallbackAvatar()
+		local rig = createNeutralAvatar()
 		if not rig then
-			warn("[TheVault] could not create player avatar display rig")
+			warn("[TheVault] could not create neutral player avatar display rig")
 			return
 		end
 		placeAvatarRig(rig)
