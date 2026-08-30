@@ -11,17 +11,25 @@ local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
 local FitConfig = require(shared:WaitForChild("VaultGearFitConfig"))
 local GearRules = require(shared:WaitForChild("VaultGearRules"))
-local Renderer = require(shared:WaitForChild("WearableSkinRenderer"))
 local gearFolder = ServerStorage:WaitForChild("TheTakeVaultCatalog"):WaitForChild("Gear")
 
-local existing = theTake:FindFirstChild("VaultFitRemotes")
-if existing then
-	existing:Destroy()
+local existingRemotes = theTake:FindFirstChild("VaultFitRemotes")
+if existingRemotes then
+	existingRemotes:Destroy()
+end
+
+local existingPreviewRoot = theTake:FindFirstChild("VaultFitPreviewModels")
+if existingPreviewRoot then
+	existingPreviewRoot:Destroy()
 end
 
 local remotes = Instance.new("Folder")
 remotes.Name = "VaultFitRemotes"
 remotes.Parent = theTake
+
+local previewRoot = Instance.new("Folder")
+previewRoot.Name = "VaultFitPreviewModels"
+previewRoot.Parent = theTake
 
 local beginFit = Instance.new("RemoteFunction")
 beginFit.Name = "BeginFit"
@@ -111,45 +119,56 @@ local function applyDraftAttributes(template: Instance, draft)
 	template:SetAttribute("GearUseAutoFit", draft.UseAutoFit == true)
 end
 
-local function equippedItemForSlot(player: Player, slot: string): string
-	local value = player:GetAttribute("VaultGear" .. slot)
-	return type(value) == "string" and value or ""
+local function bumpFitRevision(player: Player)
+	player:SetAttribute("VaultFitRevision", (tonumber(player:GetAttribute("VaultFitRevision")) or 0) + 1)
 end
 
-local function bumpPreviewRevision(player: Player)
-	player:SetAttribute("VaultGearRevision", (tonumber(player:GetAttribute("VaultGearRevision")) or 0) + 1)
+local function previewFolderFor(player: Player): Folder
+	local name = tostring(player.UserId)
+	local folder = previewRoot:FindFirstChild(name)
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+	if folder then
+		folder:Destroy()
+	end
+	folder = Instance.new("Folder")
+	folder.Name = name
+	folder.Parent = previewRoot
+	return folder
 end
 
-local function renderPlayerGear(player: Player, session)
-	local character = player.Character
-	if not character then
+local function clearPreview(player: Player)
+	local folder = previewRoot:FindFirstChild(tostring(player.UserId))
+	if folder then
+		folder:Destroy()
+	end
+	player:SetAttribute("VaultFitActive", false)
+	player:SetAttribute("VaultFitItemId", "")
+	player:SetAttribute("VaultFitSlot", "")
+	bumpFitRevision(player)
+end
+
+local function publishPreview(player: Player, session)
+	local source = findGearTemplate(session.ItemId)
+	if not source then
 		return false
 	end
 
-	Renderer.Clear(character)
-	for _, slot in ipairs(GearRules.SlotOrder) do
-		local itemId = equippedItemForSlot(player, slot)
-		local selected = session and session.Slot == slot
-		if selected then
-			itemId = session.ItemId
-		end
+	local folder = previewFolderFor(player)
+	folder:ClearAllChildren()
+	folder:SetAttribute("ItemId", session.ItemId)
+	folder:SetAttribute("GearSlot", session.Slot)
 
-		if itemId ~= "" then
-			local template = findGearTemplate(itemId)
-			if template then
-				if selected then
-					local previewTemplate = template:Clone()
-					applyDraftAttributes(previewTemplate, session.Draft)
-					Renderer.ApplyGear(character, previewTemplate, slot)
-					previewTemplate:Destroy()
-				else
-					Renderer.ApplyGear(character, template, slot)
-				end
-			end
-		end
-	end
+	local preview = source:Clone()
+	preview.Name = "Gear"
+	applyDraftAttributes(preview, session.Draft)
+	preview.Parent = folder
 
-	bumpPreviewRevision(player)
+	player:SetAttribute("VaultFitActive", true)
+	player:SetAttribute("VaultFitItemId", session.ItemId)
+	player:SetAttribute("VaultFitSlot", session.Slot)
+	bumpFitRevision(player)
 	return true
 end
 
@@ -206,7 +225,10 @@ beginFit.OnServerInvoke = function(player: Player, itemId)
 		Draft = normalizeDraft(baseline, baseline),
 	}
 	sessions[player.UserId] = session
-	renderPlayerGear(player, session)
+	if not publishPreview(player, session) then
+		sessions[player.UserId] = nil
+		return false, "PREVIEW_PUBLISH_FAILED", nil
+	end
 	return true, "FIT_STARTED", publicSession(session)
 end
 
@@ -217,46 +239,43 @@ updateFit.OnServerInvoke = function(player: Player, rawDraft)
 	end
 
 	session.Draft = normalizeDraft(rawDraft, session.Draft)
-	renderPlayerGear(player, session)
+	if not publishPreview(player, session) then
+		return false, "PREVIEW_PUBLISH_FAILED", nil
+	end
 	return true, "FIT_UPDATED", publicSession(session)
 end
 
 endFit.OnServerInvoke = function(player: Player)
 	local session = sessions[player.UserId]
 	if not session then
+		clearPreview(player)
 		return true, "FIT_ALREADY_CLOSED", nil
 	end
 
 	local final = publicSession(session)
 	sessions[player.UserId] = nil
-	renderPlayerGear(player, nil)
+	clearPreview(player)
 	return true, "FIT_CLOSED", final
+end
+
+local function initializePlayer(player: Player)
+	player:SetAttribute("VaultFitActive", false)
+	player:SetAttribute("VaultFitItemId", "")
+	player:SetAttribute("VaultFitSlot", "")
+	player:SetAttribute("VaultFitRevision", 0)
+end
+
+Players.PlayerAdded:Connect(initializePlayer)
+for _, player in ipairs(Players:GetPlayers()) do
+	initializePlayer(player)
 end
 
 Players.PlayerRemoving:Connect(function(player)
 	sessions[player.UserId] = nil
+	local folder = previewRoot:FindFirstChild(tostring(player.UserId))
+	if folder then
+		folder:Destroy()
+	end
 end)
 
-for _, player in ipairs(Players:GetPlayers()) do
-	player.CharacterAdded:Connect(function()
-		task.delay(0.5, function()
-			local session = sessions[player.UserId]
-			if session then
-				renderPlayerGear(player, session)
-			end
-		end)
-	end)
-end
-
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function()
-		task.delay(0.5, function()
-			local session = sessions[player.UserId]
-			if session then
-				renderPlayerGear(player, session)
-			end
-		end)
-	end)
-end)
-
-print("[TheVaultFit] Studio-only live gear fitting service ready")
+print("[TheVaultFit] isolated Studio gear fitting service ready")
