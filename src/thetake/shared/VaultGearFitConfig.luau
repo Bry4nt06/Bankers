@@ -3,6 +3,9 @@ local FitConfig = {}
 -- Source-controlled fit overrides for THE VAULT. These apply even to gear that
 -- was imported before the current manifest/attribute values existed. Runtime
 -- attributes on a gear model still win, so Studio can be used for one-off tuning.
+--
+-- Fitting order: Scale first, then Offset (studs), then Rotation (degrees).
+-- Keeping the final values here means corrections survive Creator Store re-imports.
 FitConfig.Items = {
 	["gear-american-tactical-vest"] = {
 		Scale = 0.90,
