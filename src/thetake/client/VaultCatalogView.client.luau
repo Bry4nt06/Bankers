@@ -14,7 +14,7 @@ local profileChanged = remotes:WaitForChild("ProfileChanged")
 
 local CATEGORY_MAP = {
 	guns = "Guns",
-	skins = "Skins",
+	gear = "Gear",
 	emotes = "Emotes",
 	safehouse_furniture = "SafehouseFurniture",
 	loadouts = "Loadouts",
@@ -27,7 +27,7 @@ local cashLabel: TextLabel? = nil
 local profile = {
 	Cash = 0,
 	Owned = {},
-	Equipped = {Skin = "", Primary = "", Secondary = ""},
+	Equipped = {Gear = "", Primary = "", Secondary = ""},
 }
 
 local function findVaultPanel()
@@ -45,6 +45,20 @@ local function findEmptyState(panel: Instance): TextLabel?
 		end
 	end
 	return nil
+end
+
+local function normalizeProfile(result)
+	if type(result) ~= "table" then
+		return
+	end
+	profile = result
+	profile.Owned = type(profile.Owned) == "table" and profile.Owned or {}
+	profile.Equipped = type(profile.Equipped) == "table" and profile.Equipped or {}
+	if type(profile.Equipped.Gear) ~= "string" then
+		profile.Equipped.Gear = type(profile.Equipped.Skin) == "string" and profile.Equipped.Skin or ""
+	end
+	profile.Equipped.Primary = type(profile.Equipped.Primary) == "string" and profile.Equipped.Primary or ""
+	profile.Equipped.Secondary = type(profile.Equipped.Secondary) == "string" and profile.Equipped.Secondary or ""
 end
 
 local function updateCash()
@@ -68,12 +82,24 @@ local function loadProfile()
 	local ok, success, _, result = pcall(function()
 		return getProfile:InvokeServer()
 	end)
-	if ok and success == true and type(result) == "table" then
-		profile = result
-		profile.Owned = type(profile.Owned) == "table" and profile.Owned or {}
-		profile.Equipped = type(profile.Equipped) == "table" and profile.Equipped or {Skin = "", Primary = "", Secondary = ""}
+	if ok and success == true then
+		normalizeProfile(result)
 	end
 	updateCash()
+end
+
+local function addThumbnailFallback(viewport: ViewportFrame, entry: Folder): boolean
+	local assetId = tonumber(entry:GetAttribute("CreatorStoreAssetId")) or 0
+	if assetId <= 0 then
+		return false
+	end
+	local image = Instance.new("ImageLabel")
+	image.Size = UDim2.fromScale(1, 1)
+	image.BackgroundTransparency = 1
+	image.Image = string.format("rbxthumb://type=Asset&id=%d&w=420&h=420", assetId)
+	image.ScaleType = Enum.ScaleType.Fit
+	image.Parent = viewport
+	return true
 end
 
 local function buildViewport(viewport: ViewportFrame, entry: Folder)
@@ -87,11 +113,14 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
 	local source = previewRoot:FindFirstChild(itemId)
 	if not source then
+		if addThumbnailFallback(viewport, entry) then
+			return
+		end
 		local fallback = Instance.new("TextLabel")
 		fallback.Size = UDim2.fromScale(1, 1)
 		fallback.BackgroundTransparency = 1
 		fallback.Font = Enum.Font.GothamBold
-		fallback.Text = entry:GetAttribute("Category") == "Skins" and "WEARABLE\nSKIN" or "NO\nPREVIEW"
+		fallback.Text = entry:GetAttribute("Category") == "Gear" and "GEAR\nPREVIEW" or "NO\nPREVIEW"
 		fallback.TextColor3 = Color3.fromRGB(118, 170, 191)
 		fallback.TextSize = 12
 		fallback.TextWrapped = true
@@ -121,6 +150,7 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	end)
 	if not okBounds or not size then
 		world:Destroy()
+		addThumbnailFallback(viewport, entry)
 		return
 	end
 
@@ -142,8 +172,8 @@ end
 
 local function isEquipped(entry: Folder, itemId: string)
 	local category = tostring(entry:GetAttribute("Category") or "")
-	if category == "Skins" then
-		return profile.Equipped.Skin == itemId
+	if category == "Gear" then
+		return profile.Equipped.Gear == itemId
 	end
 	if category == "Guns" then
 		local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
@@ -174,9 +204,9 @@ local function refresh()
 
 	if #entries == 0 then
 		emptyState.Visible = true
-		emptyState.Text = currentCategory == "Skins"
-			and "NO WEARABLE SKINS REGISTERED"
-			or "NO ITEMS REGISTERED\nDrop approved assets into ServerStorage.TheTakeVaultCatalog."
+		emptyState.Text = currentCategory == "Gear"
+			and "NO GEAR REGISTERED"
+			or "NO ITEMS REGISTERED\nAdd approved assets to ServerStorage.TheTakeVaultCatalog."
 		listFrame.Visible = false
 		return
 	end
@@ -186,6 +216,9 @@ local function refresh()
 
 	for _, entry in ipairs(entries) do
 		local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
+		local category = tostring(entry:GetAttribute("Category") or "")
+		local wearable = entry:GetAttribute("Wearable") == true
+
 		local row = Instance.new("Frame")
 		row.Name = itemId
 		row.Size = UDim2.new(1, -8, 0, 106)
@@ -217,7 +250,11 @@ local function refresh()
 		detail.Size = UDim2.new(1, -230, 0, 20)
 		detail.BackgroundTransparency = 1
 		detail.Font = Enum.Font.Gotham
-		detail.Text = entry:GetAttribute("Category") == "Skins" and "WEARABLE SKIN" or (subcategory ~= "" and subcategory or "VAULT ITEM")
+		if category == "Gear" then
+			detail.Text = wearable and "WEARABLE GEAR" or "GEAR • FIT PENDING"
+		else
+			detail.Text = subcategory ~= "" and subcategory or "VAULT ITEM"
+		end
 		detail.TextColor3 = Color3.fromRGB(157, 178, 194)
 		detail.TextSize = 11
 		detail.TextXAlignment = Enum.TextXAlignment.Left
@@ -251,8 +288,7 @@ local function refresh()
 
 		local owned = profile.Owned[itemId] == true
 		local equipped = owned and isEquipped(entry, itemId)
-		local category = tostring(entry:GetAttribute("Category") or "")
-		local equippable = category == "Guns" or category == "Skins"
+		local equippable = category == "Guns" or (category == "Gear" and wearable)
 
 		if equipped then
 			action.Text = "EQUIPPED"
@@ -283,14 +319,14 @@ local function refresh()
 				end
 
 				if callOk and type(result) == "table" then
-					profile = result
+					normalizeProfile(result)
 				end
 				if callOk and success == true and message == "PURCHASED" and equippable then
 					local equipOk, _, _, equipResult = pcall(function()
 						return equipItem:InvokeServer(itemId)
 					end)
 					if equipOk and type(equipResult) == "table" then
-						profile = equipResult
+						normalizeProfile(equipResult)
 					end
 				end
 				refresh()
@@ -373,7 +409,7 @@ previewRoot.ChildAdded:Connect(refresh)
 previewRoot.ChildRemoved:Connect(refresh)
 profileChanged.OnClientEvent:Connect(function(newProfile)
 	if type(newProfile) == "table" then
-		profile = newProfile
+		normalizeProfile(newProfile)
 		refresh()
 	end
 end)
