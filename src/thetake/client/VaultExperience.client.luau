@@ -111,7 +111,28 @@ local function stopVaultStreaming()
 	focusRemote:FireServer(false)
 end
 
+local function resetRigPose(rig: Model)
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+			track:Stop(0)
+		end
+		humanoid.AutoRotate = false
+	end
+
+	-- The showroom clones the live character. A clone can inherit the exact
+	-- Motor6D animation offsets from the frame it was copied on (run, jump, emote,
+	-- weapon stance, etc.). Clear those offsets before freezing the display rig.
+	for _, descendant in ipairs(rig:GetDescendants()) do
+		if descendant:IsA("Motor6D") then
+			descendant.Transform = CFrame.identity
+		end
+	end
+end
+
 local function disableRigBehavior(rig: Model)
+	resetRigPose(rig)
+
 	for _, descendant in ipairs(rig:GetDescendants()) do
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 			descendant:Destroy()
@@ -149,7 +170,7 @@ local function placeAvatarRig(rig: Model)
 	local facing = CFrame.lookAt(standPosition, cameraTarget)
 	rig:PivotTo(facing * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
 	avatarRig = rig
-	print("[TheVault] player avatar display ready and facing camera")
+	print("[TheVault] player avatar display ready in neutral stance and facing camera")
 end
 
 local function cloneLiveCharacter(): Model?
