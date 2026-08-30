@@ -3,6 +3,24 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local sourceRoot = ServerStorage:WaitForChild("TheTakeVaultCatalog")
 local theTakeRoot = ReplicatedStorage:WaitForChild("TheTake")
+local shared = theTakeRoot:WaitForChild("Shared")
+local Config = require(shared:WaitForChild("VaultEconomyConfig"))
+
+local skinsFolder = sourceRoot:WaitForChild("Skins")
+local defaultSkin = skinsFolder:FindFirstChild(Config.DefaultSkinId)
+if not defaultSkin then
+	defaultSkin = Instance.new("Configuration")
+	defaultSkin.Name = Config.DefaultSkinId
+	defaultSkin.Parent = skinsFolder
+end
+defaultSkin:SetAttribute("VaultItemId", Config.DefaultSkinId)
+defaultSkin:SetAttribute("VaultDisplayName", Config.DefaultSkinDisplayName)
+defaultSkin:SetAttribute("VaultPrice", Config.DefaultSkinPrice)
+defaultSkin:SetAttribute("VaultCurrency", Config.DefaultSkinCurrency)
+defaultSkin:SetAttribute("VaultEnabled", true)
+defaultSkin:SetAttribute("VaultWearable", true)
+defaultSkin:SetAttribute("VaultDefaultOwned", true)
+defaultSkin:SetAttribute("SkinType", "ProceduralDefaultCrew")
 
 local runtimeIndex = theTakeRoot:FindFirstChild("VaultStoreIndex")
 if runtimeIndex then
@@ -11,6 +29,14 @@ end
 runtimeIndex = Instance.new("Folder")
 runtimeIndex.Name = "VaultStoreIndex"
 runtimeIndex.Parent = theTakeRoot
+
+local previewRoot = theTakeRoot:FindFirstChild("VaultPreviewModels")
+if previewRoot then
+	previewRoot:Destroy()
+end
+previewRoot = Instance.new("Folder")
+previewRoot.Name = "VaultPreviewModels"
+previewRoot.Parent = theTakeRoot
 
 local VALID_TOP_LEVEL = {
 	Guns = true,
@@ -47,19 +73,52 @@ local function isCatalogItem(instance: Instance): boolean
 		return false
 	end
 
-	-- Non-gun categories accept items directly under their category folder.
 	if parent.Parent == sourceRoot then
 		return VALID_TOP_LEVEL[parent.Name] == true and parent.Name ~= "Guns"
 	end
 
-	-- Guns accept items directly under one of the Guns subcategory folders.
 	local grandparent = parent.Parent
 	if grandparent and grandparent:IsA("Folder") and grandparent.Name == "Guns" and grandparent.Parent == sourceRoot then
 		return true
 	end
 
-	-- Anything nested inside a weapon/model is implementation detail, not a store item.
 	return false
+end
+
+local function stripPreviewBehavior(instance: Instance)
+	local all = {instance}
+	for _, descendant in ipairs(instance:GetDescendants()) do
+		table.insert(all, descendant)
+	end
+	for _, descendant in ipairs(all) do
+		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+			descendant:Destroy()
+		elseif descendant:IsA("Sound") then
+			descendant:Destroy()
+		elseif descendant:IsA("ProximityPrompt") then
+			descendant:Destroy()
+		elseif descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+		end
+	end
+end
+
+local function hasVisual(instance: Instance): boolean
+	return instance:IsA("BasePart") or instance:FindFirstChildWhichIsA("BasePart", true) ~= nil
+end
+
+local function buildPreview(item: Instance, itemId: string)
+	if not hasVisual(item) then
+		return false
+	end
+	local clone = item:Clone()
+	clone.Name = itemId
+	stripPreviewBehavior(clone)
+	clone.Parent = previewRoot
+	return true
 end
 
 local function rebuild()
@@ -67,8 +126,12 @@ local function rebuild()
 	for _, child in ipairs(runtimeIndex:GetChildren()) do
 		child:Destroy()
 	end
+	for _, child in ipairs(previewRoot:GetChildren()) do
+		child:Destroy()
+	end
 
 	local count = 0
+	local previewCount = 0
 	for _, item in ipairs(sourceRoot:GetDescendants()) do
 		if isCatalogItem(item) then
 			local categoryParts = getCategoryParts(item)
@@ -77,6 +140,12 @@ local function rebuild()
 			local itemId = item:GetAttribute("VaultItemId")
 			if type(itemId) ~= "string" or itemId == "" then
 				itemId = slug(table.concat(categoryParts, "-") .. "-" .. item.Name)
+			end
+
+			local wearable = category == "Skins" and item:GetAttribute("VaultWearable") ~= false
+			local previewAvailable = buildPreview(item, itemId)
+			if previewAvailable then
+				previewCount += 1
 			end
 
 			local entry = Instance.new("Folder")
@@ -89,14 +158,19 @@ local function rebuild()
 			entry:SetAttribute("Currency", item:GetAttribute("VaultCurrency") or "Cash")
 			entry:SetAttribute("Enabled", item:GetAttribute("VaultEnabled") ~= false)
 			entry:SetAttribute("SourceClass", item.ClassName)
+			entry:SetAttribute("PreviewAvailable", previewAvailable)
+			entry:SetAttribute("Wearable", wearable)
+			entry:SetAttribute("DefaultOwned", item:GetAttribute("VaultDefaultOwned") == true)
+			entry:SetAttribute("SkinType", item:GetAttribute("SkinType") or "")
 			entry.Parent = runtimeIndex
 			count += 1
 		end
 	end
 
 	runtimeIndex:SetAttribute("ItemCount", count)
+	runtimeIndex:SetAttribute("PreviewCount", previewCount)
 	runtimeIndex:SetAttribute("Ready", true)
-	print(string.format("[TheVaultCatalog] indexed %d store items", count))
+	print(string.format("[TheVaultCatalog] indexed %d store items (%d automatic previews)", count, previewCount))
 end
 
 local function queueRebuild()
