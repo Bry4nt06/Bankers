@@ -61,6 +61,12 @@ local function hasNativeAccessory(template: Instance): boolean
 	return template:FindFirstChildWhichIsA("Accessory", true) ~= nil
 end
 
+local function isOpeningSceneGear(template: Instance): boolean
+	local itemId = tostring(template:GetAttribute("VaultItemId") or "")
+	return template:GetAttribute("OpeningSceneImported") == true
+		or string.sub(itemId, 1, #"gear-opening-") == "gear-opening-"
+end
+
 local function clampNumber(value, fallback: number, minimum: number, maximum: number): number
 	local numeric = tonumber(value)
 	if numeric == nil then
@@ -104,7 +110,9 @@ local function fitToDraft(template: Instance)
 		RotationX = fit.Rotation.X,
 		RotationY = fit.Rotation.Y,
 		RotationZ = fit.Rotation.Z,
-		UseAutoFit = fit.UseAutoFit == true,
+		-- Opening-scene accessories are copied from donor rigs. Even if an older
+		-- catalog copy is missing GearUseAutoFit, never start it in native mode.
+		UseAutoFit = isOpeningSceneGear(template) or fit.UseAutoFit == true,
 	}
 end
 
