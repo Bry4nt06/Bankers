@@ -8,6 +8,11 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
+local theTake = ReplicatedStorage:WaitForChild("TheTake")
+local shared = theTake:WaitForChild("Shared")
+local Config = require(shared:WaitForChild("VaultEconomyConfig"))
+local SkinRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
+
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
 local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
 local MENU_MODE_ATTRIBUTE = "TheTakeMenuMode"
@@ -132,8 +137,19 @@ local function disableRigBehavior(rig: Model)
 	end
 end
 
+local function refreshAvatarSkin()
+	if not avatarRig or not avatarRig.Parent then
+		return
+	end
+	SkinRenderer.Clear(avatarRig)
+	if player:GetAttribute("VaultEquippedSkin") == Config.DefaultSkinId then
+		SkinRenderer.ApplyDefaultCrew(avatarRig)
+	end
+end
+
 local function createAvatarDisplay()
 	if avatarRig and avatarRig.Parent then
+		refreshAvatarSkin()
 		return
 	end
 
@@ -158,10 +174,16 @@ local function createAvatarDisplay()
 	rig.Parent = workspace
 
 	local _, bounds = rig:GetBoundingBox()
-	rig:PivotTo(avatarStand * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
+	local standPosition = avatarStand.Position
+	local cameraTarget = Vector3.new(vaultEnd.Position.X, standPosition.Y, vaultEnd.Position.Z)
+	local facing = CFrame.lookAt(standPosition, cameraTarget)
+	rig:PivotTo(facing * CFrame.new(0, math.max(bounds.Y * 0.5, 2.5), 0))
 	avatarRig = rig
-	print("[TheVault] player avatar display ready")
+	refreshAvatarSkin()
+	print("[TheVault] player avatar display ready and facing camera")
 end
+
+player:GetAttributeChangedSignal("VaultEquippedSkin"):Connect(refreshAvatarSkin)
 
 local function styleVaultPanel(panel: Frame)
 	panel.AnchorPoint = Vector2.new(0, 0.5)
