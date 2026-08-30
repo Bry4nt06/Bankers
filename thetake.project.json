@@ -2,6 +2,25 @@
   "name": "THE TAKE",
   "tree": {
     "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "$ignoreUnknownInstances": true,
+      "TheTake": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "Shared": {
+          "$path": "src/thetake/shared"
+        },
+        "Locations": {
+          "$className": "Folder",
+          "$ignoreUnknownInstances": true,
+          "TheVault": {
+            "$className": "Folder",
+            "$ignoreUnknownInstances": true
+          }
+        }
+      }
+    },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
