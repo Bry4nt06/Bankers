@@ -1,3 +1,8 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local shared = ReplicatedStorage:WaitForChild("TheTake"):WaitForChild("Shared")
+local FitConfig = require(shared:WaitForChild("VaultGearFitConfig"))
+
 local Renderer = {}
 
 local OVERLAY_NAME = "TheTakeWearableGear"
@@ -24,8 +29,6 @@ local function isBlockedContent(value: string): boolean
 end
 
 local function clear(rig: Model)
-	-- Native Roblox accessories must remain direct children of the character for
-	-- Humanoid:AddAccessory attachment behavior, so clear our marked clones separately.
 	for _, child in ipairs(rig:GetChildren()) do
 		if child:IsA("Accessory") and child:GetAttribute(MANAGED_ACCESSORY_ATTRIBUTE) == true then
 			child:Destroy()
@@ -36,7 +39,6 @@ local function clear(rig: Model)
 	if existing then
 		existing:Destroy()
 	end
-	-- Remove the legacy overlay name during migration.
 	local legacy = rig:FindFirstChild("TheTakeWearableSkin")
 	if legacy then
 		legacy:Destroy()
@@ -247,18 +249,51 @@ local function desiredSizeForSlot(target: BasePart, slot: string): Vector3
 	elseif slot == "Base" then
 		return Vector3.new(target.Size.X * 1.16, target.Size.Y * 1.40, target.Size.Z * 1.28)
 	end
-	-- Vests/carriers should hug the torso. The old generic target was nearly 2x
-	-- the torso depth and is the main reason several imported carriers looked oversized.
 	return Vector3.new(target.Size.X * 1.16, target.Size.Y * 1.08, target.Size.Z * 1.28)
 end
 
+local function stripInvisibleFitHelpers(root: Instance)
+	local all = root:GetDescendants()
+	for index = #all, 1, -1 do
+		local descendant = all[index]
+		if descendant:IsA("BasePart")
+			and descendant.Transparency >= 0.98
+			and not descendant:FindFirstAncestorOfClass("Accessory") then
+			descendant:Destroy()
+		end
+	end
+end
+
+local function centerVisibleGeometry(wrapper: Model): Vector3?
+	local okBounds, boundsCFrame, size = pcall(function()
+		return wrapper:GetBoundingBox()
+	end)
+	if not okBounds or not size or size.Magnitude < 0.01 then
+		return nil
+	end
+
+	-- Free models often have a pivot/helper part far away from the actual mesh.
+	-- Center the visible cluster before ScaleTo so the helper pivot cannot throw
+	-- the item several studs away from the avatar.
+	local translation = CFrame.new(-boundsCFrame.Position)
+	for _, descendant in ipairs(wrapper:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CFrame = translation * descendant.CFrame
+		end
+	end
+	pcall(function()
+		wrapper.WorldPivot = CFrame.new()
+	end)
+	return size
+end
+
 local function autoFitCFrame(target: BasePart, slot: string, fittedSize: Vector3, template: Instance): CFrame
-	local x = tonumber(template:GetAttribute("GearOffsetX")) or 0
-	local y = tonumber(template:GetAttribute("GearOffsetY")) or 0
-	local z = tonumber(template:GetAttribute("GearOffsetZ")) or 0
-	local rx = tonumber(template:GetAttribute("GearRotationX")) or 0
-	local ry = tonumber(template:GetAttribute("GearRotationY")) or 0
-	local rz = tonumber(template:GetAttribute("GearRotationZ")) or 0
+	local fit = FitConfig.Resolve(template)
+	local offset = fit.Offset
+	local rotation = fit.Rotation
+	local x = offset.X
+	local y = offset.Y
+	local z = offset.Z
 
 	if slot == "Headwear" or slot == "Head" then
 		y += target.Size.Y * 0.30
@@ -276,7 +311,7 @@ local function autoFitCFrame(target: BasePart, slot: string, fittedSize: Vector3
 
 	return target.CFrame
 		* CFrame.new(x, y, z)
-		* CFrame.Angles(math.rad(rx), math.rad(ry), math.rad(rz))
+		* CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
 end
 
 local function applyAutoFit(rig: Model, template: Instance, slot: string, group: Folder): boolean
@@ -291,29 +326,27 @@ local function applyAutoFit(rig: Model, template: Instance, slot: string, group:
 	clone.Name = "Source"
 	sanitizeTree(clone)
 	clone.Parent = wrapper
+	stripInvisibleFitHelpers(wrapper)
 
 	if not wrapper:FindFirstChildWhichIsA("BasePart", true) then
 		wrapper:Destroy()
 		return false
 	end
 
-	local okBounds, _, size = pcall(function()
-		return wrapper:GetBoundingBox()
-	end)
-	if not okBounds or not size or size.Magnitude < 0.01 then
+	local size = centerVisibleGeometry(wrapper)
+	if not size then
 		wrapper:Destroy()
 		return false
 	end
 
 	local desired = desiredSizeForSlot(target, slot)
+	local fit = FitConfig.Resolve(template)
 	local scale = math.min(
 		desired.X / math.max(size.X, 0.01),
 		desired.Y / math.max(size.Y, 0.01),
 		desired.Z / math.max(size.Z, 0.01),
 		3
-	)
-	local fitScale = math.clamp(tonumber(template:GetAttribute("GearScale")) or 1, 0.35, 1.5)
-	scale *= fitScale
+	) * fit.Scale
 	pcall(function()
 		wrapper:ScaleTo(scale)
 	end)
@@ -360,8 +393,6 @@ function Renderer.ApplyGear(rig: Model, template: Instance, slot: string): boole
 	if hasExplicitAttachmentTemplate(template) then
 		success = applyExplicitTemplate(rig, template, group)
 	elseif applyNativeAccessories(rig, template) then
-		-- Standard Roblox Accessory attachments are much more reliable than trying
-		-- to infer head/face offsets from an arbitrary free-model bounding box.
 		success = true
 	else
 		success = applyAutoFit(rig, template, slot, group)
@@ -374,7 +405,6 @@ function Renderer.ApplyGear(rig: Model, template: Instance, slot: string): boole
 end
 
 function Renderer.ApplyTemplate(rig: Model, template: Instance): boolean
-	-- Backward-compatible entry point for older callers.
 	clear(rig)
 	return Renderer.ApplyGear(rig, template, tostring(template:GetAttribute("GearSlot") or "Vest"))
 end
