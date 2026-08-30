@@ -8,13 +8,9 @@ local CONFIG_NAME = "TheTakeVaultCameraConfig"
 local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
 local ORIGIN = Vector3.new(5000, 260, 5000)
 
-local ROOM_WIDTH = 132
-local ROOM_DEPTH = 54
-local ROOM_HEIGHT = 34
-local DISPLAY_COLUMNS = 18
-local DISPLAY_SPACING_X = 6.5
-local DISPLAY_SPACING_Y = 5.0
-local DISPLAY_TARGET_SIZE = 4.25
+local ROOM_WIDTH = 112
+local ROOM_DEPTH = 50
+local ROOM_HEIGHT = 30
 
 local COLORS = {
 	floor = Color3.fromRGB(17, 28, 66),
@@ -27,33 +23,32 @@ local COLORS = {
 	panel = Color3.fromRGB(27, 38, 80),
 }
 
-local oldScene = Workspace:FindFirstChild(ROOT_NAME)
-if oldScene then
-	oldScene:Destroy()
-end
-
-local oldConfig = ReplicatedStorage:FindFirstChild(CONFIG_NAME)
-if oldConfig then
-	oldConfig:Destroy()
-end
-
-local oldFocusRemote = ReplicatedStorage:FindFirstChild(FOCUS_REMOTE_NAME)
-if oldFocusRemote then
-	oldFocusRemote:Destroy()
+for _, name in ipairs({ROOT_NAME, CONFIG_NAME, FOCUS_REMOTE_NAME}) do
+	local parent = name == ROOT_NAME and Workspace or ReplicatedStorage
+	local existing = parent:FindFirstChild(name)
+	if existing then
+		existing:Destroy()
+	end
 end
 
 local scene = Instance.new("Model")
 scene.Name = ROOT_NAME
-scene.Parent = Workspace
 scene:SetAttribute("DisplayOnly", true)
+scene.Parent = Workspace
 
 local architecture = Instance.new("Folder")
 architecture.Name = "Architecture"
 architecture.Parent = scene
 
-local displays = Instance.new("Folder")
-displays.Name = "DonorEquipmentDisplays"
-displays.Parent = scene
+local displayProps = Instance.new("Folder")
+displayProps.Name = "DisplayProps"
+displayProps.Parent = scene
+
+for _, folderName in ipairs({"WeaponDisplays", "GearDisplays", "CashDisplays", "TechDisplays"}) do
+	local folder = Instance.new("Folder")
+	folder.Name = folderName
+	folder.Parent = displayProps
+end
 
 local markers = Instance.new("Folder")
 markers.Name = "Markers"
@@ -84,131 +79,12 @@ local function createMarker(name: string, cframe: CFrame): Part
 	return marker
 end
 
-local function createSurfaceLabel(part: BasePart, text: string, face: Enum.NormalId, textColor: Color3)
-	local surface = Instance.new("SurfaceGui")
-	surface.Name = "Label"
-	surface.Face = face
-	surface.AlwaysOnTop = false
-	surface.LightInfluence = 0.15
-	surface.PixelsPerStud = 52
-	surface.Parent = part
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
-	label.Text = text
-	label.TextColor3 = textColor
-	label.TextScaled = true
-	label.TextWrapped = true
-	label.Parent = surface
-end
-
--- Room shell: deliberately colored, not grayscale.
-createPart("Floor", Vector3.new(ROOM_WIDTH, 1, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(0, -0.5, 0)), COLORS.floor, Enum.Material.Slate, architecture)
-createPart("BackWall", Vector3.new(ROOM_WIDTH, ROOM_HEIGHT, 1), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT / 2, ROOM_DEPTH / 2)), COLORS.wall, Enum.Material.Concrete, architecture)
-createPart("LeftWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0)), COLORS.wallAlt, Enum.Material.Metal, architecture)
-createPart("RightWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0)), COLORS.wallAlt, Enum.Material.Metal, architecture)
-createPart("CeilingBand", Vector3.new(ROOM_WIDTH, 1, 7), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 0.5, 18)), COLORS.wine, Enum.Material.Metal, architecture)
-
-for x = -60, 60, 15 do
-	createPart("BronzeRib", Vector3.new(0.55, ROOM_HEIGHT - 3, 0.7), CFrame.new(ORIGIN + Vector3.new(x, (ROOM_HEIGHT - 3) / 2, ROOM_DEPTH / 2 - 0.9)), COLORS.bronze, Enum.Material.Metal, architecture)
-end
-
-local cyanChannel = createPart("CyanLightChannel", Vector3.new(ROOM_WIDTH - 6, 0.22, 0.35), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 3.2, ROOM_DEPTH / 2 - 1.25)), COLORS.cyan, Enum.Material.Neon, architecture)
-cyanChannel.CanCollide = false
-
-local goldChannel = createPart("GoldFloorChannel", Vector3.new(ROOM_WIDTH - 12, 0.12, 0.3), CFrame.new(ORIGIN + Vector3.new(0, 0.08, 14)), COLORS.gold, Enum.Material.Neon, architecture)
-goldChannel.CanCollide = false
-
-local pedestalBase = createPart("AvatarPedestalBase", Vector3.new(12, 0.8, 10), CFrame.new(ORIGIN + Vector3.new(0, 0.4, 1)), COLORS.wine, Enum.Material.Metal, architecture)
-local pedestalTop = createPart("AvatarPedestalTop", Vector3.new(9.5, 0.35, 8), CFrame.new(ORIGIN + Vector3.new(0, 0.98, 1)), COLORS.bronze, Enum.Material.DiamondPlate, architecture)
-pedestalBase.CanCollide = false
-pedestalTop.CanCollide = false
-createMarker("AvatarStand", CFrame.new(ORIGIN + Vector3.new(0, 1.25, 1)) * CFrame.Angles(0, math.rad(180), 0))
-
-local heroLightPart = createPart("HeroLightMount", Vector3.new(1, 0.25, 1), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 2.5, 1)), COLORS.gold, Enum.Material.Neon, architecture)
-heroLightPart.CanCollide = false
-local heroLight = Instance.new("SpotLight")
-heroLight.Name = "HeroSpot"
-heroLight.Angle = 58
-heroLight.Brightness = 5
-heroLight.Color = Color3.fromRGB(255, 196, 110)
-heroLight.Range = 42
-heroLight.Face = Enum.NormalId.Bottom
-heroLight.Shadows = true
-heroLight.Parent = heroLightPart
-
-for _, side in ipairs({-1, 1}) do
-	local x = side * 48
-	createPart("PrepConsole", Vector3.new(18, 3.4, 5), CFrame.new(ORIGIN + Vector3.new(x, 1.7, -6)), side < 0 and COLORS.wine or COLORS.panel, Enum.Material.Metal, architecture)
-	local top = createPart("PrepConsoleTop", Vector3.new(18.4, 0.25, 5.4), CFrame.new(ORIGIN + Vector3.new(x, 3.5, -6)), COLORS.bronze, Enum.Material.DiamondPlate, architecture)
-	top.CanCollide = false
-end
-
-local door = createPart("VaultDoor", Vector3.new(0.8, 18, 18), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2 + 0.7, 10, 9)), COLORS.wine, Enum.Material.Metal, architecture)
-createSurfaceLabel(door, "THE VAULT", Enum.NormalId.Right, COLORS.gold)
-for angle = 0, 300, 60 do
-	local spoke = createPart("VaultDoorSpoke", Vector3.new(0.45, 5.5, 0.45), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2 + 1.15, 10, 9)) * CFrame.Angles(math.rad(angle), 0, 0), COLORS.gold, Enum.Material.Metal, architecture)
-	spoke.CanCollide = false
-end
-
-local cameraStart = createMarker("VaultCameraStart", CFrame.lookAt(ORIGIN + Vector3.new(0, 10.5, -23), ORIGIN + Vector3.new(0, 7.5, 5)))
-local cameraEnd = createMarker("VaultCameraEnd", CFrame.lookAt(ORIGIN + Vector3.new(-8, 9.2, -17), ORIGIN + Vector3.new(3, 7.2, 5)))
-local streamingFocus = createMarker("StreamingFocus", CFrame.new(ORIGIN + Vector3.new(0, 9, 8)))
-
-local config = Instance.new("Folder")
-config.Name = CONFIG_NAME
-config:SetAttribute("Ready", false)
-config.Parent = ReplicatedStorage
-
-local startValue = Instance.new("CFrameValue")
-startValue.Name = "Start"
-startValue.Value = cameraStart.CFrame
-startValue.Parent = config
-
-local endValue = Instance.new("CFrameValue")
-endValue.Name = "End"
-endValue.Value = cameraEnd.CFrame
-endValue.Parent = config
-
-local standValue = Instance.new("CFrameValue")
-standValue.Name = "AvatarStand"
-standValue.Value = markers.AvatarStand.CFrame
-standValue.Parent = config
-
-local focusRemote = Instance.new("RemoteEvent")
-focusRemote.Name = FOCUS_REMOTE_NAME
-focusRemote.Parent = ReplicatedStorage
-focusRemote.OnServerEvent:Connect(function(player: Player, enabled)
-	if enabled == true then
-		player.ReplicationFocus = streamingFocus
-		print("[TheVault] streaming focus pinned for " .. player.Name)
-		return
-	end
-
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
-		player.ReplicationFocus = root
-	else
-		player.ReplicationFocus = nil
-	end
-	print("[TheVault] streaming focus released for " .. player.Name)
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-	if player.ReplicationFocus == streamingFocus then
-		player.ReplicationFocus = nil
-	end
-end)
-
-local function hasVisual(instance: Instance): boolean
-	return instance:IsA("BasePart") or instance:FindFirstChildWhichIsA("BasePart", true) ~= nil
-end
-
-local function sanitizeDisplayClone(instance: Instance)
+local function sanitizeDisplay(instance: Instance)
+	local all = {instance}
 	for _, descendant in ipairs(instance:GetDescendants()) do
+		table.insert(all, descendant)
+	end
+	for _, descendant in ipairs(all) do
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") then
 			descendant.Enabled = false
 		elseif descendant:IsA("Sound") then
@@ -223,110 +99,204 @@ local function sanitizeDisplayClone(instance: Instance)
 			descendant.CanQuery = false
 		end
 	end
-	if instance:IsA("BasePart") then
-		instance.Anchored = true
-		instance.CanCollide = false
-		instance.CanTouch = false
-		instance.CanQuery = false
-	end
 end
 
-local function collectTopLevel(folder: Instance?, category: string, destination: {any})
-	if not folder then
-		return
+local function cloneVisual(source: Instance?, name: string, parent: Instance, target: CFrame, targetSize: number, rotation: CFrame?): Model?
+	if not source then
+		return nil
 	end
-	local children = folder:GetChildren()
-	table.sort(children, function(a, b)
-		return a.Name:lower() < b.Name:lower()
-	end)
-	for _, child in ipairs(children) do
-		if hasVisual(child) then
-			table.insert(destination, {
-				source = child,
-				category = category,
-				name = child.Name,
-			})
-		end
-	end
-end
-
-local equipment = {}
-collectTopLevel(ServerStorage:FindFirstChild("AllWeapons"), "WEAPON", equipment)
-collectTopLevel(ServerStorage:FindFirstChild("AllArmor"), "ARMOR", equipment)
-collectTopLevel(ReplicatedStorage:FindFirstChild("Items"), "ITEM", equipment)
-
-local function createDisplaySlot(index: number, record)
-	local row = math.floor((index - 1) / DISPLAY_COLUMNS)
-	local column = (index - 1) % DISPLAY_COLUMNS
-	local x = (column - (DISPLAY_COLUMNS - 1) / 2) * DISPLAY_SPACING_X
-	local y = 4.2 + row * DISPLAY_SPACING_Y
-	local z = ROOM_DEPTH / 2 - 1.45
-
-	local backColor = record.category == "WEAPON" and COLORS.panel or (record.category == "ARMOR" and COLORS.wine or COLORS.wallAlt)
-	local back = createPart("DisplayBack", Vector3.new(5.8, 4.45, 0.32), CFrame.new(ORIGIN + Vector3.new(x, y, z)), backColor, Enum.Material.Metal, displays)
-	back.CanCollide = false
-
-	local shelf = createPart("DisplayShelf", Vector3.new(5.9, 0.18, 2.0), CFrame.new(ORIGIN + Vector3.new(x, y - 1.8, z - 0.85)), COLORS.bronze, Enum.Material.DiamondPlate, displays)
-	shelf.CanCollide = false
-
-	local labelBar = createPart("DisplayLabel", Vector3.new(5.7, 0.52, 0.16), CFrame.new(ORIGIN + Vector3.new(x, y - 1.45, z - 0.26)), COLORS.wine, Enum.Material.SmoothPlastic, displays)
-	labelBar.CanCollide = false
-	createSurfaceLabel(labelBar, record.name, Enum.NormalId.Front, COLORS.gold)
-
 	local wrapper = Instance.new("Model")
-	wrapper.Name = string.format("%03d_%s_%s", index, record.category, record.name)
-
-	local clone = record.source:Clone()
-	sanitizeDisplayClone(clone)
+	wrapper.Name = name
+	local clone = source:Clone()
+	sanitizeDisplay(clone)
 	clone.Parent = wrapper
+	wrapper.Parent = parent
 
-	if not hasVisual(wrapper) then
-		wrapper:Destroy()
-		return false
-	end
-
-	local okBounds, _, size = pcall(function()
+	local ok, _, size = pcall(function()
 		return wrapper:GetBoundingBox()
 	end)
-	if not okBounds or not size then
+	if not ok or not size then
 		wrapper:Destroy()
-		return false
+		return nil
 	end
-
 	local maxDim = math.max(size.X, size.Y, size.Z)
 	if maxDim > 0.01 then
 		pcall(function()
-			wrapper:ScaleTo(math.min(1, DISPLAY_TARGET_SIZE / maxDim))
+			wrapper:ScaleTo(math.min(1, targetSize / maxDim))
 		end)
 	end
-
-	wrapper.Parent = displays
-	wrapper:PivotTo(CFrame.new(ORIGIN + Vector3.new(x, y - 0.1, z - 1.1)) * CFrame.Angles(0, math.rad(90), math.rad(-5)))
-	return true
+	wrapper:PivotTo(target * (rotation or CFrame.new()))
+	return wrapper
 end
 
-local displayed = 0
-for index, record in ipairs(equipment) do
-	if createDisplaySlot(index, record) then
-		displayed += 1
+local function findByName(root: Instance?, names: {string}): Instance?
+	if not root then
+		return nil
 	end
+	for _, name in ipairs(names) do
+		local direct = root:FindFirstChild(name)
+		if direct then
+			return direct
+		end
+	end
+	for _, descendant in ipairs(root:GetDescendants()) do
+		for _, name in ipairs(names) do
+			if descendant.Name == name then
+				return descendant
+			end
+		end
+	end
+	return nil
 end
 
-local rows = math.max(1, math.ceil(#equipment / DISPLAY_COLUMNS))
-local requiredHeight = 7 + rows * DISPLAY_SPACING_Y
-if requiredHeight > ROOM_HEIGHT then
-	warn(string.format("[TheVault] donor collection uses %d display rows; some upper racks may sit above the initial wall shell", rows))
+local function findContaining(root: Instance?, token: string): Instance?
+	if not root then
+		return nil
+	end
+	local lowered = token:lower()
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Name:lower():find(lowered, 1, true) then
+			return descendant
+		end
+	end
+	return nil
 end
+
+-- Full-color room shell.
+createPart("Floor", Vector3.new(ROOM_WIDTH, 1, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(0, -0.5, 0)), COLORS.floor, Enum.Material.Slate, architecture)
+createPart("BackWall", Vector3.new(ROOM_WIDTH, ROOM_HEIGHT, 1), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT / 2, ROOM_DEPTH / 2)), COLORS.wall, Enum.Material.Concrete, architecture)
+createPart("LeftWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0)), COLORS.wallAlt, Enum.Material.Metal, architecture)
+createPart("RightWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0)), COLORS.wallAlt, Enum.Material.Metal, architecture)
+
+local lightChannel = createPart("CyanLightChannel", Vector3.new(ROOM_WIDTH - 8, 0.2, 0.35), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 3, ROOM_DEPTH / 2 - 1)), COLORS.cyan, Enum.Material.Neon, architecture)
+lightChannel.CanCollide = false
+local floorChannel = createPart("GoldFloorChannel", Vector3.new(ROOM_WIDTH - 14, 0.12, 0.28), CFrame.new(ORIGIN + Vector3.new(0, 0.08, 13)), COLORS.gold, Enum.Material.Neon, architecture)
+floorChannel.CanCollide = false
+
+-- Player pedestal.
+local pedestal = createPart("AvatarPedestal", Vector3.new(11, 0.8, 9), CFrame.new(ORIGIN + Vector3.new(0, 0.4, 0)), COLORS.wine, Enum.Material.DiamondPlate, architecture)
+pedestal.CanCollide = false
+createMarker("AvatarStand", CFrame.new(ORIGIN + Vector3.new(0, 1.1, 0)) * CFrame.Angles(0, math.rad(180), 0))
+
+local heroMount = createPart("HeroLightMount", Vector3.new(1, 0.25, 1), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 2.2, 0)), COLORS.gold, Enum.Material.Neon, architecture)
+heroMount.CanCollide = false
+local spot = Instance.new("SpotLight")
+spot.Angle = 58
+spot.Brightness = 4.5
+spot.Range = 38
+spot.Face = Enum.NormalId.Bottom
+spot.Color = Color3.fromRGB(255, 196, 110)
+spot.Shadows = true
+spot.Parent = heroMount
+
+-- Compact weapon shelf: background dressing only, never store interaction.
+local weaponFolder = displayProps.WeaponDisplays
+local shelfCenter = ORIGIN + Vector3.new(28, 7.5, 21.7)
+createPart("WeaponBackdrop", Vector3.new(39, 15, 0.5), CFrame.new(shelfCenter), COLORS.panel, Enum.Material.Metal, weaponFolder)
+for y = -5, 5, 5 do
+	local shelf = createPart("WeaponShelf", Vector3.new(36, 0.25, 2.2), CFrame.new(shelfCenter + Vector3.new(0, y, -1.2)), COLORS.bronze, Enum.Material.DiamondPlate, weaponFolder)
+	shelf.CanCollide = false
+end
+
+local allWeapons = ServerStorage:FindFirstChild("AllWeapons")
+local heroWeapons = {
+	{"M4A1", Vector3.new(-12, 4.0, -1.8), 5.2},
+	{"AK-47", Vector3.new(-4, 4.0, -1.8), 5.2},
+	{"SPAS-12", Vector3.new(5, -1.0, -1.8), 5.5},
+	{"Honey Badger", Vector3.new(13, -1.0, -1.8), 5.2},
+}
+for _, entry in ipairs(heroWeapons) do
+	local source = allWeapons and allWeapons:FindFirstChild(entry[1])
+	cloneVisual(source, "Display_" .. entry[1], weaponFolder, CFrame.new(shelfCenter + entry[2]), entry[3], CFrame.Angles(0, math.rad(90), math.rad(-4)))
+end
+
+-- Secondary weapon shelf.
+local secondaryBase = ORIGIN + Vector3.new(28, 2.7, 21.0)
+for index, name in ipairs({"Glock-17", "M9A3"}) do
+	local source = allWeapons and allWeapons:FindFirstChild(name)
+	cloneVisual(source, "Secondary_" .. name, weaponFolder, CFrame.new(secondaryBase + Vector3.new((index - 1.5) * 8, 0, 0)), 3.3, CFrame.Angles(0, math.rad(90), 0))
+end
+
+-- Tactical gear on stands.
+local gearFolder = displayProps.GearDisplays
+local allArmor = ServerStorage:FindFirstChild("AllArmor")
+for index, lookup in ipairs({{"Vest"}, {"Bag"}, {"Hat"}}) do
+	local x = -35 + (index - 1) * 9
+	local stand = createPart("GearStand", Vector3.new(6.5, 0.5, 5), CFrame.new(ORIGIN + Vector3.new(x, 0.25, 16)), COLORS.bronze, Enum.Material.DiamondPlate, gearFolder)
+	stand.CanCollide = false
+	local source = findByName(allArmor, lookup)
+	cloneVisual(source, "Gear_" .. lookup[1], gearFolder, CFrame.new(ORIGIN + Vector3.new(x, 4.5, 16)), 5.4, CFrame.Angles(0, math.rad(180), 0))
+end
+
+-- Donor cash/briefcase props.
+local cashFolder = displayProps.CashDisplays
+local syntySpy = ServerStorage:FindFirstChild("SyntySpy")
+local cashTable = createPart("CashTable", Vector3.new(17, 2.4, 6), CFrame.new(ORIGIN + Vector3.new(-35, 1.2, -5)), COLORS.wine, Enum.Material.Metal, cashFolder)
+local cashTop = createPart("CashTableTop", Vector3.new(17.4, 0.2, 6.4), CFrame.new(ORIGIN + Vector3.new(-35, 2.5, -5)), COLORS.bronze, Enum.Material.DiamondPlate, cashFolder)
+cashTable.CanCollide = false
+cashTop.CanCollide = false
+cloneVisual(findContaining(syntySpy, "briefcase_cash"), "CashBriefcase", cashFolder, CFrame.new(ORIGIN + Vector3.new(-39, 4.0, -5)), 4.8, CFrame.Angles(0, math.rad(25), 0))
+cloneVisual(findContaining(syntySpy, "prop_cash"), "CashStacks", cashFolder, CFrame.new(ORIGIN + Vector3.new(-31, 3.0, -5)), 3.7, CFrame.Angles(0, math.rad(-20), 0))
+
+-- Donor monitor hardware built into two colored laptop stations.
+local techFolder = displayProps.TechDisplays
+local syntyScifi = ServerStorage:FindFirstChild("SyntyScifi")
+local donorMonitor = findContaining(syntyScifi, "monitor_01") or findContaining(syntyScifi, "security_monitor")
+for index = 1, 2 do
+	local x = 27 + (index - 1) * 13
+	local deskPos = ORIGIN + Vector3.new(x, 1.4, -7)
+	local desk = createPart("LaptopDesk", Vector3.new(10, 2.8, 5), CFrame.new(deskPos), COLORS.panel, Enum.Material.Metal, techFolder)
+	local base = createPart("LaptopBase", Vector3.new(6.5, 0.35, 4.3), CFrame.new(deskPos + Vector3.new(0, 1.6, 0)), index == 1 and COLORS.wine or COLORS.wallAlt, Enum.Material.Metal, techFolder)
+	local keyboard = createPart("KeyboardGlow", Vector3.new(5.4, 0.08, 2.4), CFrame.new(deskPos + Vector3.new(0, 1.82, -0.45)), COLORS.cyan, Enum.Material.Neon, techFolder)
+	desk.CanCollide = false
+	base.CanCollide = false
+	keyboard.CanCollide = false
+	cloneVisual(donorMonitor, "DonorLaptopMonitor" .. index, techFolder, CFrame.new(deskPos + Vector3.new(0, 4.0, 1.1)) * CFrame.Angles(0, math.rad(180), 0), 4.5)
+end
+
+-- Vault door accent.
+local door = createPart("VaultDoor", Vector3.new(0.8, 17, 17), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2 + 0.7, 9.5, 7)), COLORS.wine, Enum.Material.Metal, architecture)
+for angle = 0, 300, 60 do
+	local spoke = createPart("VaultDoorSpoke", Vector3.new(0.45, 5.0, 0.45), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2 + 1.1, 9.5, 7)) * CFrame.Angles(math.rad(angle), 0, 0), COLORS.gold, Enum.Material.Metal, architecture)
+	spoke.CanCollide = false
+end
+
+local cameraStart = createMarker("VaultCameraStart", CFrame.lookAt(ORIGIN + Vector3.new(-5, 9.8, -21), ORIGIN + Vector3.new(7, 6.7, 7)))
+local cameraEnd = createMarker("VaultCameraEnd", CFrame.lookAt(ORIGIN + Vector3.new(-8, 8.8, -16), ORIGIN + Vector3.new(7, 6.4, 7)))
+local streamingFocus = createMarker("StreamingFocus", CFrame.new(ORIGIN + Vector3.new(0, 8, 8)))
+
+local config = Instance.new("Folder")
+config.Name = CONFIG_NAME
+config:SetAttribute("Ready", false)
+config.Parent = ReplicatedStorage
+
+for name, value in pairs({Start = cameraStart.CFrame, End = cameraEnd.CFrame, AvatarStand = markers.AvatarStand.CFrame}) do
+	local cframeValue = Instance.new("CFrameValue")
+	cframeValue.Name = name
+	cframeValue.Value = value
+	cframeValue.Parent = config
+end
+
+local focusRemote = Instance.new("RemoteEvent")
+focusRemote.Name = FOCUS_REMOTE_NAME
+focusRemote.Parent = ReplicatedStorage
+focusRemote.OnServerEvent:Connect(function(player: Player, enabled)
+	if enabled == true then
+		player.ReplicationFocus = streamingFocus
+		print("[TheVault] streaming focus pinned for " .. player.Name)
+		return
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	player.ReplicationFocus = root and root:IsA("BasePart") and root or nil
+	print("[TheVault] streaming focus released for " .. player.Name)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.ReplicationFocus == streamingFocus then
+		player.ReplicationFocus = nil
+	end
+end)
 
 config:SetAttribute("Ready", true)
-scene:SetAttribute("EquipmentCount", #equipment)
-scene:SetAttribute("DisplayedCount", displayed)
-
-print(string.format(
-	"[TheVault] full-color showroom ready | donor equipment=%d | displayed=%d | weapons=%s | armor=%s | items=%s",
-	#equipment,
-	displayed,
-	tostring(ServerStorage:FindFirstChild("AllWeapons") ~= nil),
-	tostring(ServerStorage:FindFirstChild("AllArmor") ~= nil),
-	tostring(ReplicatedStorage:FindFirstChild("Items") ~= nil)
-))
+print("[TheVault] curated showroom ready | 4 primary weapons | 2 sidearms | tactical gear | cash | tech")
