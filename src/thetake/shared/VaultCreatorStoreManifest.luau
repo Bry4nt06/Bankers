@@ -18,8 +18,6 @@ Manifest.Guns = {
 -- accessories so it matches THE TAKE's established visual language and uses the
 -- same native Roblox attachments as the menu models.
 Manifest.Gear = {
-	{assetId = 4353344617, itemId = "gear-american-tactical-vest", displayName = "American Tactical Vest", price = 900, creator = "@ryan6475h", gearSlot = "Vest", fitScale = 0.90},
-	{assetId = 8623886809, itemId = "gear-iotv", displayName = "IOTV Carrier", price = 1600, creator = "@pug1003", gearSlot = "Vest", fitScale = 0.88},
 	{assetId = 71696740279397, itemId = "gear-plate-carrier", displayName = "Tactical Plate Carrier", price = 1500, creator = "@CyberLight6870", gearSlot = "Vest", fitScale = 0.90},
 	{assetId = 7959512734, itemId = "gear-tactical-helmet", displayName = "Tactical Helmet", price = 850, creator = "@jmackity", gearSlot = "Headwear", fitScale = 0.92, fitOffsetY = 0.04},
 	{assetId = 12198170201, itemId = "gear-mask", displayName = "Tactical Mask", price = 600, creator = "@Abs0lute_S0lver1", gearSlot = "FaceMask", fitScale = 0.88},
