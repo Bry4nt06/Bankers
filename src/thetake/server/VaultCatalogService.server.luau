@@ -137,12 +137,17 @@ local function rebuild()
 			local categoryParts = getCategoryParts(item)
 			local category = categoryParts[1] or "Unknown"
 			local subcategory = categoryParts[2] or ""
+			local wearable = category == "Skins" and item:GetAttribute("VaultWearable") == true
+			local enabled = item:GetAttribute("VaultEnabled") ~= false
+			if category == "Skins" and not wearable then
+				enabled = false
+			end
+
 			local itemId = item:GetAttribute("VaultItemId")
 			if type(itemId) ~= "string" or itemId == "" then
 				itemId = slug(table.concat(categoryParts, "-") .. "-" .. item.Name)
 			end
 
-			local wearable = category == "Skins" and item:GetAttribute("VaultWearable") ~= false
 			local previewAvailable = buildPreview(item, itemId)
 			if previewAvailable then
 				previewCount += 1
@@ -156,7 +161,7 @@ local function rebuild()
 			entry:SetAttribute("Subcategory", subcategory)
 			entry:SetAttribute("Price", item:GetAttribute("VaultPrice") or 0)
 			entry:SetAttribute("Currency", item:GetAttribute("VaultCurrency") or "Cash")
-			entry:SetAttribute("Enabled", item:GetAttribute("VaultEnabled") ~= false)
+			entry:SetAttribute("Enabled", enabled)
 			entry:SetAttribute("SourceClass", item.ClassName)
 			entry:SetAttribute("PreviewAvailable", previewAvailable)
 			entry:SetAttribute("Wearable", wearable)
