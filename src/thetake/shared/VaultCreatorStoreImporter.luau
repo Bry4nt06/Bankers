@@ -2,22 +2,53 @@ local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
-local Manifest = require(ReplicatedStorage:WaitForChild("TheTake"):WaitForChild("Shared"):WaitForChild("VaultCreatorStoreManifest"))
+local shared = ReplicatedStorage:WaitForChild("TheTake"):WaitForChild("Shared")
+local Manifest = require(shared:WaitForChild("VaultCreatorStoreManifest"))
+local GearRules = require(shared:WaitForChild("VaultGearRules"))
 
 local Importer = {}
+
+local BLOCKED_MESH_IDS = {
+	[8357187898] = true,
+	[8357195670] = true,
+	[8211433480] = true,
+	[8357164518] = true,
+	[8357191738] = true,
+}
+
+local function contentIdNumber(value: string): number?
+	local number = value:match("(%d+)")
+	return number and tonumber(number) or nil
+end
 
 local function sanitize(instance: Instance)
 	local all = {instance}
 	for _, descendant in ipairs(instance:GetDescendants()) do
 		table.insert(all, descendant)
 	end
-	for _, descendant in ipairs(all) do
+	for index = #all, 1, -1 do
+		local descendant = all[index]
 		if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 			descendant:Destroy()
 		elseif descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction") or descendant:IsA("BindableEvent") or descendant:IsA("BindableFunction") then
 			descendant:Destroy()
 		elseif descendant:IsA("Sound") or descendant:IsA("ProximityPrompt") or descendant:IsA("ClickDetector") then
 			descendant:Destroy()
+		elseif descendant:IsA("MeshPart") then
+			local id = contentIdNumber(descendant.MeshId)
+			if id and BLOCKED_MESH_IDS[id] then
+				descendant:Destroy()
+			else
+				descendant.Anchored = true
+				descendant.CanCollide = false
+				descendant.CanTouch = false
+				descendant.CanQuery = false
+			end
+		elseif descendant:IsA("SpecialMesh") then
+			local id = contentIdNumber(descendant.MeshId)
+			if id and BLOCKED_MESH_IDS[id] then
+				descendant:Destroy()
+			end
 		elseif descendant:IsA("BasePart") then
 			descendant.Anchored = true
 			descendant.CanCollide = false
@@ -56,6 +87,23 @@ local function migrateLegacySkins(root: Folder)
 	print(string.format("[VaultImporter] migrated legacy Skins -> Gear | moved=%d", moved))
 end
 
+local function clearLegacyLoadoutPresets(root: Folder)
+	local folder = root:FindFirstChild("Loadouts")
+	if not folder or not folder:IsA("Folder") then
+		return
+	end
+	local removed = 0
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:GetAttribute("SeededBaseline") == true then
+			child:Destroy()
+			removed += 1
+		end
+	end
+	if removed > 0 then
+		print(string.format("[VaultImporter] removed %d legacy purchasable loadout presets; LOADOUTS is now the Gear wardrobe", removed))
+	end
+end
+
 local function targetFolder(root: Folder, category: string, record): Folder?
 	local folder = root:FindFirstChild(category)
 	if not folder or not folder:IsA("Folder") then
@@ -80,9 +128,10 @@ local function setCommonAttributes(item: Instance, category: string, record)
 	item:SetAttribute("CreatorStoreSourceName", record.displayName)
 
 	if category == "Gear" then
-		item:SetAttribute("VaultWearable", false)
-		item:SetAttribute("FitStatus", "NeedsFitting")
+		item:SetAttribute("VaultWearable", true)
+		item:SetAttribute("FitStatus", "AutoFit")
 		item:SetAttribute("GearType", "CreatorStoreModel")
+		item:SetAttribute("GearSlot", GearRules.InferSlot(item))
 	elseif category == "Emotes" then
 		item:SetAttribute("EmoteType", "CreatorStoreAnimationAsset")
 	elseif category == "SafehouseFurniture" then
@@ -118,39 +167,6 @@ local function importAsset(root: Folder, category: string, record, replaceExisti
 	return true, "IMPORTED"
 end
 
-local function seedLoadouts(root: Folder, replaceExisting: boolean)
-	local folder = root:FindFirstChild("Loadouts")
-	if not folder or not folder:IsA("Folder") then
-		return 0, 0
-	end
-
-	local imported = 0
-	local skipped = 0
-	for _, record in ipairs(Manifest.Loadouts) do
-		local existing = findByItemId(folder, record.itemId)
-		if existing and replaceExisting then
-			existing:Destroy()
-			existing = nil
-		end
-		if existing then
-			skipped += 1
-		else
-			local config = Instance.new("Configuration")
-			config.Name = record.displayName
-			config:SetAttribute("VaultItemId", record.itemId)
-			config:SetAttribute("VaultDisplayName", record.displayName)
-			config:SetAttribute("VaultPrice", record.price or 0)
-			config:SetAttribute("VaultCurrency", "Cash")
-			config:SetAttribute("VaultEnabled", true)
-			config:SetAttribute("LoadoutRole", record.role or "")
-			config:SetAttribute("SeededBaseline", true)
-			config.Parent = folder
-			imported += 1
-		end
-	end
-	return imported, skipped
-end
-
 function Importer.Run(options)
 	options = type(options) == "table" and options or {}
 	local replaceExisting = options.replaceExisting == true
@@ -161,6 +177,7 @@ function Importer.Run(options)
 	end
 
 	migrateLegacySkins(root)
+	clearLegacyLoadoutPresets(root)
 
 	local permissionReadable, allowThirdParty = pcall(function()
 		return AssetService.AllowInsertFreeAssets
@@ -188,12 +205,8 @@ function Importer.Run(options)
 		end
 	end
 
-	local loadoutImported, loadoutSkipped = seedLoadouts(root, replaceExisting)
-	imported += loadoutImported
-	skipped += loadoutSkipped
-
 	print(string.format(
-		"[VaultImporter] complete | imported=%d | skipped=%d | failed=%d | Crew Standard remains source-controlled Gear",
+		"[VaultImporter] complete | imported=%d | skipped=%d | failed=%d | LOADOUTS is wardrobe-only",
 		imported,
 		skipped,
 		failed
