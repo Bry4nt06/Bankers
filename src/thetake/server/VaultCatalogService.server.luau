@@ -5,6 +5,7 @@ local sourceRoot = ServerStorage:WaitForChild("TheTakeVaultCatalog")
 local theTakeRoot = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTakeRoot:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
+local GearRules = require(shared:WaitForChild("VaultGearRules"))
 
 local gearFolder = sourceRoot:WaitForChild("Gear")
 local defaultGear = nil
@@ -44,7 +45,8 @@ local VALID_TOP_LEVEL = {
 	Gear = true,
 	Emotes = true,
 	SafehouseFurniture = true,
-	Loadouts = true,
+	-- Loadouts are now a wardrobe view over owned Gear, not purchasable catalog records.
+	Loadouts = false,
 }
 
 local rebuildQueued = false
@@ -113,6 +115,13 @@ local function buildPreview(item: Instance, itemId: string)
 	if not hasVisual(item) then
 		return false
 	end
+
+	-- Creator Store imports use Roblox thumbnails in the catalog UI. Cloning their raw
+	-- meshes into ReplicatedStorage caused Studio to repeatedly fetch inaccessible child meshes.
+	if item:GetAttribute("CreatorStoreImported") == true then
+		return false
+	end
+
 	local clone = item:Clone()
 	clone.Name = itemId
 	stripPreviewBehavior(clone)
@@ -136,7 +145,7 @@ local function rebuild()
 			local categoryParts = getCategoryParts(item)
 			local category = categoryParts[1] or "Unknown"
 			local subcategory = categoryParts[2] or ""
-			local wearable = category == "Gear" and item:GetAttribute("VaultWearable") == true
+			local wearable = category == "Gear" and GearRules.IsWearable(item)
 			local enabled = item:GetAttribute("VaultEnabled") ~= false
 
 			local itemId = item:GetAttribute("VaultItemId")
@@ -164,7 +173,8 @@ local function rebuild()
 			entry:SetAttribute("Wearable", wearable)
 			entry:SetAttribute("DefaultOwned", item:GetAttribute("VaultDefaultOwned") == true)
 			entry:SetAttribute("GearType", item:GetAttribute("GearType") or item:GetAttribute("SkinType") or "")
-			entry:SetAttribute("FitStatus", item:GetAttribute("FitStatus") or (wearable and "Ready" or ""))
+			entry:SetAttribute("GearSlot", category == "Gear" and GearRules.InferSlot(item) or "")
+			entry:SetAttribute("FitStatus", category == "Gear" and GearRules.FitStatus(item) or "")
 			entry:SetAttribute("CreatorStoreAssetId", creatorStoreAssetId)
 			entry:SetAttribute("SourceName", item:GetAttribute("CreatorStoreSourceName") or "")
 			entry.Parent = runtimeIndex
@@ -175,7 +185,7 @@ local function rebuild()
 	runtimeIndex:SetAttribute("ItemCount", count)
 	runtimeIndex:SetAttribute("PreviewCount", previewCount)
 	runtimeIndex:SetAttribute("Ready", true)
-	print(string.format("[TheVaultCatalog] indexed %d store items (%d automatic previews)", count, previewCount))
+	print(string.format("[TheVaultCatalog] indexed %d store items (%d local 3D previews; Creator Store uses thumbnails)", count, previewCount))
 end
 
 local function queueRebuild()
