@@ -36,6 +36,26 @@ local function findByItemId(folder: Instance, itemId: string): Instance?
 	return nil
 end
 
+local function migrateLegacySkins(root: Folder)
+	local legacy = root:FindFirstChild("Skins")
+	local gear = root:FindFirstChild("Gear")
+	if not legacy or not legacy:IsA("Folder") or not gear or not gear:IsA("Folder") then
+		return
+	end
+
+	local moved = 0
+	for _, child in ipairs(legacy:GetChildren()) do
+		local itemId = child:GetAttribute("VaultItemId")
+		local duplicate = type(itemId) == "string" and itemId ~= "" and findByItemId(gear, itemId) or nil
+		if not duplicate then
+			child.Parent = gear
+			moved += 1
+		end
+	end
+	legacy:Destroy()
+	print(string.format("[VaultImporter] migrated legacy Skins -> Gear | moved=%d", moved))
+end
+
 local function targetFolder(root: Folder, category: string, record): Folder?
 	local folder = root:FindFirstChild(category)
 	if not folder or not folder:IsA("Folder") then
@@ -139,6 +159,8 @@ function Importer.Run(options)
 	if not root or not root:IsA("Folder") then
 		error("[VaultImporter] ServerStorage.TheTakeVaultCatalog is missing. Connect Rojo with thetake.project.json first.")
 	end
+
+	migrateLegacySkins(root)
 
 	local permissionReadable, allowThirdParty = pcall(function()
 		return AssetService.AllowInsertFreeAssets
