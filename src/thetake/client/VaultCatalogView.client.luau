@@ -4,6 +4,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
+local shared = theTake:WaitForChild("Shared")
+local GearRules = require(shared:WaitForChild("VaultGearRules"))
+local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 local index = theTake:WaitForChild("VaultStoreIndex")
 local previewRoot = theTake:WaitForChild("VaultPreviewModels")
 local remotes = theTake:WaitForChild("VaultRemotes")
@@ -24,11 +27,20 @@ local currentCategory = "Guns"
 local listFrame: ScrollingFrame? = nil
 local emptyState: TextLabel? = nil
 local cashLabel: TextLabel? = nil
+
+local function emptyGearSlots()
+	local slots = {}
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		slots[slot] = ""
+	end
+	return slots
+end
+
 local profile = {
 	Cash = 0,
 	Owned = {},
 	Equipped = {
-		GearSlots = {Base = "", Head = "", Face = "", Torso = "", Back = ""},
+		GearSlots = emptyGearSlots(),
 		Primary = "",
 		Secondary = "",
 	},
@@ -51,6 +63,33 @@ local function findEmptyState(panel: Instance): TextLabel?
 	return nil
 end
 
+local function migrateClientSlots(incoming)
+	local slots = emptyGearSlots()
+	if type(incoming) ~= "table" then
+		return slots
+	end
+
+	local function apply(rawSlot: string)
+		local value = incoming[rawSlot]
+		if type(value) ~= "string" or value == "" then
+			return
+		end
+		local normalized = GearRules.NormalizeSlot(rawSlot, value)
+		if value == Config.DefaultGearId and slots[normalized] ~= "" then
+			return
+		end
+		slots[normalized] = value
+	end
+
+	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
+		apply(slot)
+	end
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		apply(slot)
+	end
+	return slots
+end
+
 local function normalizeProfile(result)
 	if type(result) ~= "table" then
 		return
@@ -58,15 +97,15 @@ local function normalizeProfile(result)
 	profile = result
 	profile.Owned = type(profile.Owned) == "table" and profile.Owned or {}
 	profile.Equipped = type(profile.Equipped) == "table" and profile.Equipped or {}
-	profile.Equipped.GearSlots = type(profile.Equipped.GearSlots) == "table" and profile.Equipped.GearSlots or {
-		Base = type(profile.Equipped.Gear) == "string" and profile.Equipped.Gear or "",
-		Head = "",
-		Face = "",
-		Torso = "",
-		Back = "",
-	}
-	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
-		profile.Equipped.GearSlots[slot] = type(profile.Equipped.GearSlots[slot]) == "string" and profile.Equipped.GearSlots[slot] or ""
+	if type(profile.Equipped.GearSlots) == "table" then
+		profile.Equipped.GearSlots = migrateClientSlots(profile.Equipped.GearSlots)
+	else
+		local slots = emptyGearSlots()
+		local legacy = type(profile.Equipped.Gear) == "string" and profile.Equipped.Gear or ""
+		if legacy ~= "" then
+			slots[GearRules.NormalizeSlot("Base", legacy)] = legacy
+		end
+		profile.Equipped.GearSlots = slots
 	end
 	profile.Equipped.Primary = type(profile.Equipped.Primary) == "string" and profile.Equipped.Primary or ""
 	profile.Equipped.Secondary = type(profile.Equipped.Secondary) == "string" and profile.Equipped.Secondary or ""
@@ -185,8 +224,12 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	viewport.CurrentCamera = previewCamera
 end
 
+local function entrySlot(entry: Folder, itemId: string): string
+	return GearRules.NormalizeSlot(tostring(entry:GetAttribute("GearSlot") or "Vest"), itemId)
+end
+
 local function isGearEquipped(entry: Folder, itemId: string): boolean
-	local slot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+	local slot = entrySlot(entry, itemId)
 	return profile.Equipped.GearSlots[slot] == itemId
 end
 
@@ -213,10 +256,16 @@ local function collectEntries()
 		end
 	end
 	table.sort(entries, function(a, b)
-		local slotA = tostring(a:GetAttribute("GearSlot") or "")
-		local slotB = tostring(b:GetAttribute("GearSlot") or "")
-		if currentCategory == "Wardrobe" and slotA ~= slotB then
-			return slotA < slotB
+		if currentCategory == "Wardrobe" then
+			local itemA = tostring(a:GetAttribute("ItemId") or a.Name)
+			local itemB = tostring(b:GetAttribute("ItemId") or b.Name)
+			local slotA = entrySlot(a, itemA)
+			local slotB = entrySlot(b, itemB)
+			local rankA = GearRules.SlotRank(slotA)
+			local rankB = GearRules.SlotRank(slotB)
+			if rankA ~= rankB then
+				return rankA < rankB
+			end
 		end
 		return tostring(a:GetAttribute("DisplayName")):lower() < tostring(b:GetAttribute("DisplayName")):lower()
 	end)
@@ -231,6 +280,38 @@ local function callEquip(itemId: string)
 		normalizeProfile(result)
 	end
 	return callOk and success == true, message
+end
+
+local function addWardrobeHeader(slot: string, layoutOrder: number)
+	if not listFrame then
+		return
+	end
+	local header = Instance.new("Frame")
+	header.Name = "Category_" .. slot
+	header.Size = UDim2.new(1, -8, 0, 34)
+	header.BackgroundTransparency = 1
+	header.LayoutOrder = layoutOrder
+	header.Parent = listFrame
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -8, 1, 0)
+	label.Position = UDim2.fromOffset(4, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.Text = GearRules.SlotLabel(slot)
+	label.TextColor3 = Color3.fromRGB(236, 179, 78)
+	label.TextSize = 12
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = header
+
+	local line = Instance.new("Frame")
+	line.AnchorPoint = Vector2.new(0, 1)
+	line.Position = UDim2.new(0, 4, 1, -2)
+	line.Size = UDim2.new(1, -8, 0, 1)
+	line.BorderSizePixel = 0
+	line.BackgroundColor3 = Color3.fromRGB(77, 210, 218)
+	line.BackgroundTransparency = 0.62
+	line.Parent = header
 end
 
 local refresh
@@ -258,19 +339,29 @@ refresh = function()
 	emptyState.Visible = false
 	listFrame.Visible = true
 
+	local layoutOrder = 0
+	local lastWardrobeSlot = ""
 	for _, entry in ipairs(entries) do
 		local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
 		local category = tostring(entry:GetAttribute("Category") or "")
 		local wearable = entry:GetAttribute("Wearable") == true
-		local gearSlot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+		local gearSlot = category == "Gear" and entrySlot(entry, itemId) or ""
 		local fitStatus = tostring(entry:GetAttribute("FitStatus") or "")
 
+		if currentCategory == "Wardrobe" and gearSlot ~= lastWardrobeSlot then
+			layoutOrder += 1
+			addWardrobeHeader(gearSlot, layoutOrder)
+			lastWardrobeSlot = gearSlot
+		end
+
+		layoutOrder += 1
 		local row = Instance.new("Frame")
 		row.Name = itemId
 		row.Size = UDim2.new(1, -8, 0, 106)
 		row.BackgroundColor3 = Color3.fromRGB(24, 54, 82)
 		row.BackgroundTransparency = 0.10
 		row.BorderSizePixel = 0
+		row.LayoutOrder = layoutOrder
 		row.Parent = listFrame
 
 		local viewport = Instance.new("ViewportFrame")
@@ -296,9 +387,9 @@ refresh = function()
 		detail.BackgroundTransparency = 1
 		detail.Font = Enum.Font.Gotham
 		if currentCategory == "Wardrobe" then
-			detail.Text = string.upper(gearSlot) .. " SLOT • " .. (fitStatus ~= "" and string.upper(fitStatus) or "READY")
+			detail.Text = GearRules.SlotLabel(gearSlot) .. " • " .. (fitStatus ~= "" and string.upper(fitStatus) or "READY")
 		elseif category == "Gear" then
-			detail.Text = string.upper(gearSlot) .. " • " .. (wearable and (fitStatus == "AutoFit" and "AUTO FIT" or "WEARABLE") or "FIT PENDING")
+			detail.Text = GearRules.SlotLabel(gearSlot) .. " • " .. (wearable and (fitStatus == "AutoFit" and "AUTO FIT" or "WEARABLE") or "FIT PENDING")
 		else
 			local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
 			detail.Text = subcategory ~= "" and subcategory or "VAULT ITEM"
@@ -346,8 +437,8 @@ refresh = function()
 				action.Text = "FIT PENDING"
 				action.Active = false
 			elseif isGearEquipped(entry, itemId) then
-				if gearSlot == "Base" then
-					action.Text = "BASE WORN"
+				if itemId == Config.DefaultGearId then
+					action.Text = "DEFAULT WORN"
 					action.Active = false
 				else
 					action.Text = "REMOVE"
@@ -494,4 +585,4 @@ profileChanged.OnClientEvent:Connect(function(newProfile)
 	end
 end)
 
-print("[TheVaultCatalog] store + LOADOUT wardrobe UI ready")
+print("[TheVaultCatalog] store + categorized LOADOUT wardrobe UI ready")
