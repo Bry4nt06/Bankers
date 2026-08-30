@@ -41,14 +41,25 @@ local function isCatalogItem(instance: Instance): boolean
 	if instance:IsA("Folder") then
 		return false
 	end
-	local cursor = instance.Parent
-	while cursor and cursor ~= sourceRoot do
-		if cursor.Parent == sourceRoot and not VALID_TOP_LEVEL[cursor.Name] then
-			return false
-		end
-		cursor = cursor.Parent
+
+	local parent = instance.Parent
+	if not parent or not parent:IsA("Folder") then
+		return false
 	end
-	return cursor == sourceRoot
+
+	-- Non-gun categories accept items directly under their category folder.
+	if parent.Parent == sourceRoot then
+		return VALID_TOP_LEVEL[parent.Name] == true and parent.Name ~= "Guns"
+	end
+
+	-- Guns accept items directly under one of the Guns subcategory folders.
+	local grandparent = parent.Parent
+	if grandparent and grandparent:IsA("Folder") and grandparent.Name == "Guns" and grandparent.Parent == sourceRoot then
+		return true
+	end
+
+	-- Anything nested inside a weapon/model is implementation detail, not a store item.
+	return false
 end
 
 local function rebuild()
@@ -102,7 +113,6 @@ sourceRoot.DescendantRemoving:Connect(queueRebuild)
 for _, descendant in ipairs(sourceRoot:GetDescendants()) do
 	descendant.AttributeChanged:Connect(queueRebuild)
 end
-
 sourceRoot.DescendantAdded:Connect(function(descendant)
 	descendant.AttributeChanged:Connect(queueRebuild)
 end)
