@@ -62,6 +62,8 @@ local RETIRED_ITEM_IDS = {
 	["gear-ir-helmet"] = true,
 	["gear-helmet-model"] = true,
 	["gear-backpack"] = true,
+	["gear-iotv"] = true,
+	["gear-american-tactical-vest"] = true,
 }
 
 local function lower(value): string
@@ -159,7 +161,12 @@ local function seedRecord(scene: Instance, record): boolean
 	clone:SetAttribute("VaultWearable", true)
 	clone:SetAttribute("GearType", "OpeningSceneAccessory")
 	clone:SetAttribute("GearSlot", record.gearSlot)
-	clone:SetAttribute("FitStatus", "Native")
+	-- Opening-scene accessories are cloned after already being attached to donor rigs.
+	-- Their copied RigidConstraint state is not reliable on the neutral Vault mannequin.
+	-- Force the bounding-box fitter first so every imported item is visible/selectable,
+	-- then use Studio Fit Mode to dial in its final scale/offset/rotation.
+	clone:SetAttribute("GearUseAutoFit", true)
+	clone:SetAttribute("FitStatus", "AutoFit")
 	clone:SetAttribute("OpeningSceneImported", true)
 	clone:SetAttribute("OpeningSceneSourceName", record.sourceName)
 	clone.Parent = gearFolder
