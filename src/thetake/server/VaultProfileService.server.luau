@@ -8,6 +8,7 @@ local theTake = ReplicatedStorage:WaitForChild("TheTake")
 local shared = theTake:WaitForChild("Shared")
 local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 local GearRenderer = require(shared:WaitForChild("WearableSkinRenderer"))
+local GearRules = require(shared:WaitForChild("VaultGearRules"))
 local storeIndex = theTake:WaitForChild("VaultStoreIndex")
 local catalogRoot = ServerStorage:WaitForChild("TheTakeVaultCatalog")
 local gearFolder = catalogRoot:WaitForChild("Gear")
@@ -43,6 +44,16 @@ end
 
 local profiles = {}
 
+local function defaultGearSlots()
+	return {
+		Base = Config.DefaultGearId,
+		Head = "",
+		Face = "",
+		Torso = "",
+		Back = "",
+	}
+end
+
 local function newProfile()
 	return {
 		Cash = Config.StartingCash,
@@ -50,7 +61,7 @@ local function newProfile()
 			[Config.DefaultGearId] = true,
 		},
 		Equipped = {
-			Gear = Config.DefaultGearId,
+			GearSlots = defaultGearSlots(),
 			Primary = "",
 			Secondary = "",
 		},
@@ -62,6 +73,7 @@ local function normalizeProfile(raw)
 	if type(raw) ~= "table" then
 		return profile
 	end
+
 	if type(raw.Cash) == "number" then
 		profile.Cash = math.max(0, math.floor(raw.Cash))
 	end
@@ -72,14 +84,26 @@ local function normalizeProfile(raw)
 			end
 		end
 	end
+
 	if type(raw.Equipped) == "table" then
-		local gearValue = raw.Equipped.Gear
-		if type(gearValue) ~= "string" or gearValue == "" then
-			gearValue = raw.Equipped.Skin -- legacy v1 profile field
+		if type(raw.Equipped.GearSlots) == "table" then
+			for _, slot in ipairs(GearRules.SlotOrder) do
+				local value = raw.Equipped.GearSlots[slot]
+				if type(value) == "string" then
+					profile.Equipped.GearSlots[slot] = value
+				end
+			end
+		else
+			-- Migration from the original one-gear/skin profile format.
+			local legacy = raw.Equipped.Gear
+			if type(legacy) ~= "string" or legacy == "" then
+				legacy = raw.Equipped.Skin
+			end
+			if type(legacy) == "string" and legacy ~= "" then
+				profile.Equipped.GearSlots.Base = legacy
+			end
 		end
-		if type(gearValue) == "string" and gearValue ~= "" then
-			profile.Equipped.Gear = gearValue
-		end
+
 		for _, key in ipairs({"Primary", "Secondary"}) do
 			local value = raw.Equipped[key]
 			if type(value) == "string" then
@@ -87,11 +111,29 @@ local function normalizeProfile(raw)
 			end
 		end
 	end
+
 	profile.Owned[Config.DefaultGearId] = true
-	if profile.Equipped.Gear == "" or not profile.Owned[profile.Equipped.Gear] then
-		profile.Equipped.Gear = Config.DefaultGearId
+	if profile.Equipped.GearSlots.Base == "" or not profile.Owned[profile.Equipped.GearSlots.Base] then
+		profile.Equipped.GearSlots.Base = Config.DefaultGearId
+	end
+	for _, slot in ipairs({"Head", "Face", "Torso", "Back"}) do
+		local itemId = profile.Equipped.GearSlots[slot]
+		if itemId ~= "" and not profile.Owned[itemId] then
+			profile.Equipped.GearSlots[slot] = ""
+		end
 	end
 	return profile
+end
+
+local function copyGearSlots(source)
+	local result = defaultGearSlots()
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		local value = source and source[slot]
+		if type(value) == "string" then
+			result[slot] = value
+		end
+	end
+	return result
 end
 
 local function publicProfile(profile)
@@ -101,12 +143,14 @@ local function publicProfile(profile)
 			owned[itemId] = true
 		end
 	end
+	local slots = copyGearSlots(profile.Equipped.GearSlots)
 	return {
 		Cash = profile.Cash,
 		Owned = owned,
 		Equipped = {
-			Gear = profile.Equipped.Gear,
-			Skin = profile.Equipped.Gear, -- temporary compatibility alias
+			GearSlots = slots,
+			Gear = slots.Base, -- compatibility alias
+			Skin = slots.Base, -- legacy compatibility alias
 			Primary = profile.Equipped.Primary,
 			Secondary = profile.Equipped.Secondary,
 		},
@@ -114,14 +158,22 @@ local function publicProfile(profile)
 end
 
 local function applyPlayerAttributes(player: Player, profile)
+	local slots = profile.Equipped.GearSlots
 	player:SetAttribute("VaultCash", profile.Cash)
-	player:SetAttribute("VaultEquippedGear", profile.Equipped.Gear)
-	player:SetAttribute("VaultEquippedSkin", profile.Equipped.Gear) -- compatibility alias
+	player:SetAttribute("VaultEquippedGear", slots.Base)
+	player:SetAttribute("VaultEquippedSkin", slots.Base)
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		player:SetAttribute("VaultGear" .. slot, slots[slot] or "")
+	end
 	player:SetAttribute("VaultEquippedPrimary", profile.Equipped.Primary)
 	player:SetAttribute("VaultEquippedSecondary", profile.Equipped.Secondary)
+	player:SetAttribute("VaultGearRevision", (tonumber(player:GetAttribute("VaultGearRevision")) or 0) + 1)
 end
 
 local function findGearTemplate(itemId: string): Instance?
+	if itemId == "" then
+		return nil
+	end
 	for _, gear in ipairs(gearFolder:GetChildren()) do
 		if gear:GetAttribute("VaultItemId") == itemId then
 			return gear
@@ -140,16 +192,18 @@ local function applyEquippedGear(player: Player, character: Model?)
 	end
 
 	GearRenderer.Clear(character)
-	local template = findGearTemplate(profile.Equipped.Gear)
-	if not template then
-		warn(string.format("[TheVaultProfile] equipped gear template missing: %s", profile.Equipped.Gear))
-		return
-	end
-	if template:GetAttribute("VaultWearable") ~= true then
-		return
-	end
-	if not GearRenderer.ApplyTemplate(character, template) then
-		warn(string.format("[TheVaultProfile] gear template could not attach: %s", profile.Equipped.Gear))
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		local itemId = profile.Equipped.GearSlots[slot] or ""
+		if itemId ~= "" then
+			local template = findGearTemplate(itemId)
+			if template and GearRules.IsWearable(template) then
+				if not GearRenderer.ApplyGear(character, template, slot) then
+					warn(string.format("[TheVaultProfile] gear could not attach: %s [%s]", itemId, slot))
+				end
+			elseif not template then
+				warn(string.format("[TheVaultProfile] equipped gear template missing: %s", itemId))
+			end
+		end
 	end
 end
 
@@ -177,7 +231,7 @@ local function loadProfile(player: Player)
 		task.defer(applyEquippedGear, player, player.Character)
 	end
 
-	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | default gear owned", player.Name, profile.Cash))
+	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | wardrobe slots ready", player.Name, profile.Cash))
 end
 
 local function saveProfile(player: Player)
@@ -274,11 +328,21 @@ equipItem.OnServerInvoke = function(player: Player, itemId)
 	end
 
 	local category = tostring(entry:GetAttribute("Category") or "")
+	local message = "EQUIPPED"
 	if category == "Gear" then
 		if entry:GetAttribute("Wearable") ~= true then
 			return false, "GEAR_FIT_PENDING", publicProfile(profile)
 		end
-		profile.Equipped.Gear = itemId
+		local slot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+		if profile.Equipped.GearSlots[slot] == itemId then
+			if slot == "Base" then
+				return true, "BASE_GEAR_REQUIRED", publicProfile(profile)
+			end
+			profile.Equipped.GearSlots[slot] = ""
+			message = "UNEQUIPPED"
+		else
+			profile.Equipped.GearSlots[slot] = itemId
+		end
 		applyEquippedGear(player, player.Character)
 	elseif category == "Guns" then
 		local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
@@ -292,8 +356,8 @@ equipItem.OnServerInvoke = function(player: Player, itemId)
 	end
 
 	notify(player)
-	print(string.format("[TheVaultProfile] %s equipped %s", player.Name, itemId))
-	return true, "EQUIPPED", publicProfile(profile)
+	print(string.format("[TheVaultProfile] %s %s %s", player.Name, string.lower(message), itemId))
+	return true, message, publicProfile(profile)
 end
 
 Players.PlayerAdded:Connect(loadProfile)
