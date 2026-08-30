@@ -104,7 +104,6 @@ createPart("LeftWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGI
 createPart("RightWall", Vector3.new(1, ROOM_HEIGHT, ROOM_DEPTH), CFrame.new(ORIGIN + Vector3.new(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0)), COLORS.wallAlt, Enum.Material.Metal, architecture)
 createPart("CeilingBand", Vector3.new(ROOM_WIDTH, 1, 7), CFrame.new(ORIGIN + Vector3.new(0, ROOM_HEIGHT - 0.5, 18)), COLORS.wine, Enum.Material.Metal, architecture)
 
--- Colored structural ribs and light channels.
 for x = -60, 60, 15 do
 	createPart("BronzeRib", Vector3.new(0.55, ROOM_HEIGHT - 3, 0.7), CFrame.new(ORIGIN + Vector3.new(x, (ROOM_HEIGHT - 3) / 2, ROOM_DEPTH / 2 - 0.9)), COLORS.bronze, Enum.Material.Metal, architecture)
 end
@@ -115,7 +114,6 @@ cyanChannel.CanCollide = false
 local goldChannel = createPart("GoldFloorChannel", Vector3.new(ROOM_WIDTH - 12, 0.12, 0.3), CFrame.new(ORIGIN + Vector3.new(0, 0.08, 14)), COLORS.gold, Enum.Material.Neon, architecture)
 goldChannel.CanCollide = false
 
--- Center player pedestal.
 local pedestalBase = createPart("AvatarPedestalBase", Vector3.new(12, 0.8, 10), CFrame.new(ORIGIN + Vector3.new(0, 0.4, 1)), COLORS.wine, Enum.Material.Metal, architecture)
 local pedestalTop = createPart("AvatarPedestalTop", Vector3.new(9.5, 0.35, 8), CFrame.new(ORIGIN + Vector3.new(0, 0.98, 1)), COLORS.bronze, Enum.Material.DiamondPlate, architecture)
 pedestalBase.CanCollide = false
@@ -134,7 +132,6 @@ heroLight.Face = Enum.NormalId.Bottom
 heroLight.Shadows = true
 heroLight.Parent = heroLightPart
 
--- Side prep consoles to make the room read as a safehouse/armory instead of an empty box.
 for _, side in ipairs({-1, 1}) do
 	local x = side * 48
 	createPart("PrepConsole", Vector3.new(18, 3.4, 5), CFrame.new(ORIGIN + Vector3.new(x, 1.7, -6)), side < 0 and COLORS.wine or COLORS.panel, Enum.Material.Metal, architecture)
@@ -142,7 +139,6 @@ for _, side in ipairs({-1, 1}) do
 	top.CanCollide = false
 end
 
--- Large vault door visual on the left wall.
 local door = createPart("VaultDoor", Vector3.new(0.8, 18, 18), CFrame.new(ORIGIN + Vector3.new(-ROOM_WIDTH / 2 + 0.7, 10, 9)), COLORS.wine, Enum.Material.Metal, architecture)
 createSurfaceLabel(door, "THE VAULT", Enum.NormalId.Right, COLORS.gold)
 for angle = 0, 300, 60 do
@@ -150,7 +146,6 @@ for angle = 0, 300, 60 do
 	spoke.CanCollide = false
 end
 
--- Camera markers used only by the client Vault camera override.
 local cameraStart = createMarker("VaultCameraStart", CFrame.lookAt(ORIGIN + Vector3.new(0, 10.5, -23), ORIGIN + Vector3.new(0, 7.5, 5)))
 local cameraEnd = createMarker("VaultCameraEnd", CFrame.lookAt(ORIGIN + Vector3.new(-8, 9.2, -17), ORIGIN + Vector3.new(3, 7.2, 5)))
 
@@ -257,8 +252,7 @@ local function createDisplaySlot(index: number, record)
 	end
 
 	local okBounds, _, size = pcall(function()
-		local cf, bounds = wrapper:GetBoundingBox()
-		return true, cf, bounds
+		return wrapper:GetBoundingBox()
 	end)
 	if not okBounds or not size then
 		wrapper:Destroy()
@@ -284,8 +278,6 @@ for index, record in ipairs(equipment) do
 	end
 end
 
--- If the donor collection exceeds the visible wall height, extend the room shell upward
--- instead of silently dropping equipment. This is intentionally a first-pass showroom.
 local rows = math.max(1, math.ceil(#equipment / DISPLAY_COLUMNS))
 local requiredHeight = 7 + rows * DISPLAY_SPACING_Y
 if requiredHeight > ROOM_HEIGHT then
