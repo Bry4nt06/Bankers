@@ -5,6 +5,8 @@ local FitConfig = {}
 -- attributes on a gear model still win, so Studio can be used for one-off tuning.
 --
 -- Fitting order: Scale first, then Offset (studs), then Rotation (degrees).
+-- UseAutoFit forces our manual bounding-box fitter even when the source contains
+-- a standard Roblox Accessory. Leave it false/nil when native attachments fit well.
 -- Keeping the final values here means corrections survive Creator Store re-imports.
 FitConfig.Items = {
 	["gear-american-tactical-vest"] = {
@@ -75,6 +77,10 @@ function FitConfig.Resolve(template: Instance)
 	local rx = tonumber(template:GetAttribute("GearRotationX"))
 	local ry = tonumber(template:GetAttribute("GearRotationY"))
 	local rz = tonumber(template:GetAttribute("GearRotationZ"))
+	local useAutoFit = template:GetAttribute("GearUseAutoFit")
+	if type(useAutoFit) ~= "boolean" then
+		useAutoFit = configured and configured.UseAutoFit == true or false
+	end
 
 	return {
 		Scale = math.clamp(scale, 0.25, 2),
@@ -88,6 +94,7 @@ function FitConfig.Resolve(template: Instance)
 			ry ~= nil and ry or configuredRotation.Y,
 			rz ~= nil and rz or configuredRotation.Z
 		),
+		UseAutoFit = useAutoFit == true,
 	}
 end
 
