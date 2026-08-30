@@ -87,7 +87,7 @@ function Renderer.ApplyDefaultCrew(rig: Model)
 			Vector3.new(strapWidth, torso.Size.Y * 0.82, 0.11),
 			CFrame.new(x, 0, -(torso.Size.Z / 2 + 0.13)),
 			COLORS.bronze,
-			Enum.Material.Leather
+			Enum.Material.Fabric
 		)
 	end
 
