@@ -9,6 +9,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
 local CONFIG_NAME = "TheTakeVaultCameraConfig"
+local FOCUS_REMOTE_NAME = "TheTakeVaultStreamingFocus"
 local MENU_MODE_ATTRIBUTE = "TheTakeMenuMode"
 local STARTED_ATTRIBUTE = "TheTakeGameplayStarted"
 local BIND_NAME = "TheTakeVaultCameraAuthority"
@@ -23,10 +24,17 @@ local PARALLAX_X = 0.55
 local PARALLAX_Y = 0.30
 local PARALLAX_YAW = 1.0
 local PARALLAX_PITCH = 0.55
+local STREAM_REFRESH_SECONDS = 2.0
 
 local config = ReplicatedStorage:WaitForChild(CONFIG_NAME, 20)
 if not config then
 	warn("[TheVault] camera config missing")
+	return
+end
+
+local focusRemote = ReplicatedStorage:WaitForChild(FOCUS_REMOTE_NAME, 20)
+if not focusRemote or not focusRemote:IsA("RemoteEvent") then
+	warn("[TheVault] streaming focus remote missing")
 	return
 end
 
@@ -60,13 +68,46 @@ local neutralMouse = UserInputService:GetMouseLocation()
 local smoothedX = 0
 local smoothedY = 0
 local avatarRig: Model? = nil
+local streamGeneration = 0
 
 local function requestVaultStream()
-	if workspace.StreamingEnabled then
+	if not workspace.StreamingEnabled then
+		return
+	end
+
+	local center = avatarStand.Position + Vector3.new(0, 8, 8)
+	local points = {
+		vaultStart.Position,
+		vaultEnd.Position,
+		center,
+		center + Vector3.new(-48, 4, 18),
+		center + Vector3.new(48, 4, 18),
+	}
+
+	for _, position in ipairs(points) do
 		pcall(function()
-			player:RequestStreamAroundAsync(vaultEnd.Position, 5)
+			player:RequestStreamAroundAsync(position, 3)
 		end)
 	end
+end
+
+local function startVaultStreaming()
+	streamGeneration += 1
+	local generation = streamGeneration
+	focusRemote:FireServer(true)
+	requestVaultStream()
+
+	task.spawn(function()
+		while vaultOpen and generation == streamGeneration and player:GetAttribute(STARTED_ATTRIBUTE) ~= true do
+			requestVaultStream()
+			task.wait(STREAM_REFRESH_SECONDS)
+		end
+	end)
+end
+
+local function stopVaultStreaming()
+	streamGeneration += 1
+	focusRemote:FireServer(false)
 end
 
 local function disableRigBehavior(rig: Model)
@@ -158,7 +199,7 @@ local function setVaultOpen(open: boolean)
 	player:SetAttribute(MENU_MODE_ATTRIBUTE, open and "Vault" or "Main")
 
 	if open then
-		requestVaultStream()
+		startVaultStreaming()
 		createAvatarDisplay()
 		entryStartedAt = os.clock()
 		entryFromCFrame = camera.CFrame
@@ -168,11 +209,18 @@ local function setVaultOpen(open: boolean)
 		smoothedY = 0
 		print("[TheVault] entering 3D showroom")
 	else
+		stopVaultStreaming()
 		print("[TheVault] returning camera authority to main menu")
 	end
 end
 
 player:SetAttribute(MENU_MODE_ATTRIBUTE, "Main")
+
+player:GetAttributeChangedSignal(STARTED_ATTRIBUTE):Connect(function()
+	if player:GetAttribute(STARTED_ATTRIBUTE) == true and vaultOpen then
+		setVaultOpen(false)
+	end
+end)
 
 RunService:UnbindFromRenderStep(BIND_NAME)
 RunService:BindToRenderStep(BIND_NAME, CAMERA_PRIORITY, function(dt)
@@ -230,6 +278,11 @@ local function watchMenuGui(gui: ScreenGui)
 	setVaultOpen(panel.Visible)
 	panel:GetPropertyChangedSignal("Visible"):Connect(function()
 		setVaultOpen(panel.Visible)
+	end)
+	gui.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and vaultOpen then
+			setVaultOpen(false)
+		end
 	end)
 end
 
