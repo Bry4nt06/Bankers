@@ -4,6 +4,7 @@ local Config = {
 
 	-- Keep the original item id so existing ownership data remains valid.
 	DefaultGearId = "skins-default-crew",
+	DefaultGearSlot = "Vest",
 	DefaultGearDisplayName = "Crew Standard",
 	DefaultGearPrice = 0,
 	DefaultGearCurrency = "Cash",
