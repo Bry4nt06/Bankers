@@ -1,6 +1,12 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local shared = ReplicatedStorage:WaitForChild("TheTake"):WaitForChild("Shared")
+local FitConfig = require(shared:WaitForChild("VaultGearFitConfig"))
+
 local Renderer = {}
 
 local OVERLAY_NAME = "TheTakeWearableGear"
+local MANAGED_ACCESSORY_ATTRIBUTE = "TheTakeManagedAccessory"
 
 -- These mesh ids were observed returning AssetFetchStatus failure in Studio.
 -- They are removed before an imported Creator Store model is parented into a rendered container.
@@ -23,11 +29,16 @@ local function isBlockedContent(value: string): boolean
 end
 
 local function clear(rig: Model)
+	for _, child in ipairs(rig:GetChildren()) do
+		if child:IsA("Accessory") and child:GetAttribute(MANAGED_ACCESSORY_ATTRIBUTE) == true then
+			child:Destroy()
+		end
+	end
+
 	local existing = rig:FindFirstChild(OVERLAY_NAME)
 	if existing then
 		existing:Destroy()
 	end
-	-- Remove the legacy overlay name during migration.
 	local legacy = rig:FindFirstChild("TheTakeWearableSkin")
 	if legacy then
 		legacy:Destroy()
@@ -170,43 +181,137 @@ local function applyExplicitTemplate(rig: Model, template: Instance, group: Fold
 	return applied > 0
 end
 
+local function collectAccessories(template: Instance): {Accessory}
+	local result = {}
+	if template:IsA("Accessory") then
+		table.insert(result, template)
+	end
+	for _, descendant in ipairs(template:GetDescendants()) do
+		if descendant:IsA("Accessory") then
+			table.insert(result, descendant)
+		end
+	end
+	return result
+end
+
+local function applyNativeAccessories(rig: Model, template: Instance): boolean
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return false
+	end
+
+	local applied = 0
+	for _, source in ipairs(collectAccessories(template)) do
+		local accessory = source:Clone()
+		sanitizeTree(accessory)
+		local handle = accessory:FindFirstChild("Handle")
+		if handle and handle:IsA("BasePart") then
+			accessory:SetAttribute(MANAGED_ACCESSORY_ATTRIBUTE, true)
+			local ok = pcall(function()
+				humanoid:AddAccessory(accessory)
+			end)
+			if ok and accessory.Parent == rig then
+				applied += 1
+			else
+				accessory:Destroy()
+			end
+		else
+			accessory:Destroy()
+		end
+	end
+	return applied > 0
+end
+
 local function targetForSlot(rig: Model, slot: string): BasePart?
-	if slot == "Head" or slot == "Face" then
+	if slot == "Headwear" or slot == "Eyewear" or slot == "FaceMask" or slot == "Head" or slot == "Face" then
 		return findTarget(rig, "Head", nil)
+	elseif slot == "Waist" then
+		return findTarget(rig, "LowerTorso", "Torso")
+	elseif slot == "Hands" then
+		return findTarget(rig, "RightHand", "Right Arm")
 	end
 	return findTarget(rig, "UpperTorso", "Torso")
 end
 
 local function desiredSizeForSlot(target: BasePart, slot: string): Vector3
-	if slot == "Head" then
-		return Vector3.new(target.Size.X * 1.65, target.Size.Y * 1.55, target.Size.Z * 1.65)
-	elseif slot == "Face" then
-		return Vector3.new(target.Size.X * 1.35, target.Size.Y * 1.25, target.Size.Z * 1.35)
+	if slot == "Headwear" or slot == "Head" then
+		return Vector3.new(target.Size.X * 1.24, target.Size.Y * 1.22, target.Size.Z * 1.24)
+	elseif slot == "Eyewear" then
+		return Vector3.new(target.Size.X * 1.12, target.Size.Y * 0.58, target.Size.Z * 0.68)
+	elseif slot == "FaceMask" or slot == "Face" then
+		return Vector3.new(target.Size.X * 1.12, target.Size.Y * 1.02, target.Size.Z * 0.86)
 	elseif slot == "Back" then
-		return Vector3.new(target.Size.X * 1.35, target.Size.Y * 1.45, target.Size.Z * 1.8)
+		return Vector3.new(target.Size.X * 1.12, target.Size.Y * 1.16, target.Size.Z * 1.05)
+	elseif slot == "Waist" then
+		return Vector3.new(target.Size.X * 1.18, target.Size.Y * 0.72, target.Size.Z * 1.20)
+	elseif slot == "Hands" then
+		return Vector3.new(target.Size.X * 1.16, target.Size.Y * 1.16, target.Size.Z * 1.16)
+	elseif slot == "Base" then
+		return Vector3.new(target.Size.X * 1.16, target.Size.Y * 1.40, target.Size.Z * 1.28)
 	end
-	return Vector3.new(target.Size.X * 1.45, target.Size.Y * 1.4, target.Size.Z * 1.9)
+	return Vector3.new(target.Size.X * 1.16, target.Size.Y * 1.08, target.Size.Z * 1.28)
+end
+
+local function stripInvisibleFitHelpers(root: Instance)
+	local all = root:GetDescendants()
+	for index = #all, 1, -1 do
+		local descendant = all[index]
+		if descendant:IsA("BasePart")
+			and descendant.Transparency >= 0.98
+			and not descendant:FindFirstAncestorOfClass("Accessory") then
+			descendant:Destroy()
+		end
+	end
+end
+
+local function centerVisibleGeometry(wrapper: Model): Vector3?
+	local okBounds, boundsCFrame, size = pcall(function()
+		return wrapper:GetBoundingBox()
+	end)
+	if not okBounds or not size or size.Magnitude < 0.01 then
+		return nil
+	end
+
+	-- Free models often have a pivot/helper part far away from the actual mesh.
+	-- Center the visible cluster before ScaleTo so the helper pivot cannot throw
+	-- the item several studs away from the avatar.
+	local translation = CFrame.new(-boundsCFrame.Position)
+	for _, descendant in ipairs(wrapper:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CFrame = translation * descendant.CFrame
+		end
+	end
+	pcall(function()
+		wrapper.WorldPivot = CFrame.new()
+	end)
+	return size
 end
 
 local function autoFitCFrame(target: BasePart, slot: string, fittedSize: Vector3, template: Instance): CFrame
-	local x = tonumber(template:GetAttribute("GearOffsetX")) or 0
-	local y = tonumber(template:GetAttribute("GearOffsetY")) or 0
-	local z = tonumber(template:GetAttribute("GearOffsetZ")) or 0
-	local rx = tonumber(template:GetAttribute("GearRotationX")) or 0
-	local ry = tonumber(template:GetAttribute("GearRotationY")) or 0
-	local rz = tonumber(template:GetAttribute("GearRotationZ")) or 0
+	local fit = FitConfig.Resolve(template)
+	local offset = fit.Offset
+	local rotation = fit.Rotation
+	local x = offset.X
+	local y = offset.Y
+	local z = offset.Z
 
-	if slot == "Head" then
-		y += target.Size.Y * 0.18
-	elseif slot == "Face" then
-		z -= target.Size.Z * 0.34
+	if slot == "Headwear" or slot == "Head" then
+		y += target.Size.Y * 0.30
+	elseif slot == "Eyewear" then
+		y += target.Size.Y * 0.03
+		z -= target.Size.Z * 0.44
+	elseif slot == "FaceMask" or slot == "Face" then
+		y -= target.Size.Y * 0.04
+		z -= target.Size.Z * 0.40
 	elseif slot == "Back" then
-		z += target.Size.Z * 0.56 + fittedSize.Z * 0.12
+		z += target.Size.Z * 0.52 + fittedSize.Z * 0.22
+	elseif slot == "Waist" then
+		y -= target.Size.Y * 0.08
 	end
 
 	return target.CFrame
 		* CFrame.new(x, y, z)
-		* CFrame.Angles(math.rad(rx), math.rad(ry), math.rad(rz))
+		* CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
 end
 
 local function applyAutoFit(rig: Model, template: Instance, slot: string, group: Folder): boolean
@@ -221,27 +326,27 @@ local function applyAutoFit(rig: Model, template: Instance, slot: string, group:
 	clone.Name = "Source"
 	sanitizeTree(clone)
 	clone.Parent = wrapper
+	stripInvisibleFitHelpers(wrapper)
 
 	if not wrapper:FindFirstChildWhichIsA("BasePart", true) then
 		wrapper:Destroy()
 		return false
 	end
 
-	local okBounds, _, size = pcall(function()
-		return wrapper:GetBoundingBox()
-	end)
-	if not okBounds or not size or size.Magnitude < 0.01 then
+	local size = centerVisibleGeometry(wrapper)
+	if not size then
 		wrapper:Destroy()
 		return false
 	end
 
 	local desired = desiredSizeForSlot(target, slot)
+	local fit = FitConfig.Resolve(template)
 	local scale = math.min(
 		desired.X / math.max(size.X, 0.01),
 		desired.Y / math.max(size.Y, 0.01),
 		desired.Z / math.max(size.Z, 0.01),
 		3
-	)
+	) * fit.Scale
 	pcall(function()
 		wrapper:ScaleTo(scale)
 	end)
@@ -284,9 +389,16 @@ function Renderer.ApplyGear(rig: Model, template: Instance, slot: string): boole
 	group:SetAttribute("GearSlot", slot)
 	group.Parent = overlay
 
+	local fit = FitConfig.Resolve(template)
 	local success
-	if hasExplicitAttachmentTemplate(template) then
+	if fit.UseAutoFit then
+		-- Studio fitting can deliberately bypass a native Accessory attachment so
+		-- scale/offset/rotation controls affect the item immediately.
+		success = applyAutoFit(rig, template, slot, group)
+	elseif hasExplicitAttachmentTemplate(template) then
 		success = applyExplicitTemplate(rig, template, group)
+	elseif applyNativeAccessories(rig, template) then
+		success = true
 	else
 		success = applyAutoFit(rig, template, slot, group)
 	end
@@ -298,9 +410,8 @@ function Renderer.ApplyGear(rig: Model, template: Instance, slot: string): boole
 end
 
 function Renderer.ApplyTemplate(rig: Model, template: Instance): boolean
-	-- Backward-compatible entry point for older callers.
 	clear(rig)
-	return Renderer.ApplyGear(rig, template, tostring(template:GetAttribute("GearSlot") or "Base"))
+	return Renderer.ApplyGear(rig, template, tostring(template:GetAttribute("GearSlot") or "Vest"))
 end
 
 return Renderer

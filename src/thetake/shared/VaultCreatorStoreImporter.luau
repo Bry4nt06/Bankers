@@ -117,6 +117,24 @@ local function targetFolder(root: Folder, category: string, record): Folder?
 	return folder
 end
 
+local function copyGearFitAttributes(item: Instance, record)
+	local mappings = {
+		fitScale = "GearScale",
+		fitOffsetX = "GearOffsetX",
+		fitOffsetY = "GearOffsetY",
+		fitOffsetZ = "GearOffsetZ",
+		fitRotationX = "GearRotationX",
+		fitRotationY = "GearRotationY",
+		fitRotationZ = "GearRotationZ",
+	}
+	for key, attribute in pairs(mappings) do
+		local value = tonumber(record[key])
+		if value then
+			item:SetAttribute(attribute, value)
+		end
+	end
+end
+
 local function setCommonAttributes(item: Instance, category: string, record, sourceAssetId: number, sourceCreator: string, sourceName: string)
 	item:SetAttribute("VaultItemId", record.itemId)
 	item:SetAttribute("VaultDisplayName", record.displayName)
@@ -132,7 +150,9 @@ local function setCommonAttributes(item: Instance, category: string, record, sou
 		item:SetAttribute("VaultWearable", true)
 		item:SetAttribute("FitStatus", "AutoFit")
 		item:SetAttribute("GearType", "CreatorStoreModel")
-		item:SetAttribute("GearSlot", GearRules.InferSlot(item))
+		local requestedSlot = type(record.gearSlot) == "string" and record.gearSlot or GearRules.InferSlot(item)
+		item:SetAttribute("GearSlot", GearRules.NormalizeSlot(requestedSlot, record.itemId))
+		copyGearFitAttributes(item, record)
 	elseif category == "Emotes" then
 		item:SetAttribute("EmoteType", "CreatorStoreAnimationAsset")
 	elseif category == "SafehouseFurniture" then
@@ -145,11 +165,13 @@ local function searchQueries(category: string, record)
 	if category == "Guns" then
 		table.insert(queries, tostring(record.subcategory or "gun"))
 	elseif category == "Gear" then
-		if string.find(string.lower(record.displayName), "helmet", 1, true) then
+		if record.gearSlot == "Eyewear" then
+			table.insert(queries, "tactical goggles")
+		elseif record.gearSlot == "Headwear" or string.find(string.lower(record.displayName), "helmet", 1, true) then
 			table.insert(queries, "tactical helmet")
-		elseif string.find(string.lower(record.displayName), "mask", 1, true) then
+		elseif record.gearSlot == "FaceMask" or string.find(string.lower(record.displayName), "mask", 1, true) then
 			table.insert(queries, "tactical mask")
-		elseif string.find(string.lower(record.displayName), "backpack", 1, true) then
+		elseif record.gearSlot == "Back" or string.find(string.lower(record.displayName), "backpack", 1, true) then
 			table.insert(queries, "tactical backpack")
 		else
 			table.insert(queries, "tactical vest")

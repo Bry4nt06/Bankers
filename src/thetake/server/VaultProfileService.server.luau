@@ -44,14 +44,18 @@ end
 
 local profiles = {}
 
+local function emptyGearSlots()
+	local slots = {}
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		slots[slot] = ""
+	end
+	return slots
+end
+
 local function defaultGearSlots()
-	return {
-		Base = Config.DefaultGearId,
-		Head = "",
-		Face = "",
-		Torso = "",
-		Back = "",
-	}
+	local slots = emptyGearSlots()
+	slots[Config.DefaultGearSlot] = Config.DefaultGearId
+	return slots
 end
 
 local function newProfile()
@@ -66,6 +70,36 @@ local function newProfile()
 			Secondary = "",
 		},
 	}
+end
+
+local function migrateGearSlots(rawSlots)
+	local migrated = emptyGearSlots()
+	if type(rawSlots) ~= "table" then
+		return migrated
+	end
+
+	local function applyRawSlot(rawSlot: string)
+		local value = rawSlots[rawSlot]
+		if type(value) ~= "string" or value == "" then
+			return
+		end
+		local normalized = GearRules.NormalizeSlot(rawSlot, value)
+		-- Never let the default Crew Standard overwrite a more specific vest that
+		-- was already selected in an older Torso/Vest field.
+		if value == Config.DefaultGearId and migrated[normalized] ~= "" then
+			return
+		end
+		migrated[normalized] = value
+	end
+
+	-- Import legacy names first, then let already-migrated granular slot names win.
+	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
+		applyRawSlot(slot)
+	end
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		applyRawSlot(slot)
+	end
+	return migrated
 end
 
 local function normalizeProfile(raw)
@@ -87,20 +121,17 @@ local function normalizeProfile(raw)
 
 	if type(raw.Equipped) == "table" then
 		if type(raw.Equipped.GearSlots) == "table" then
-			for _, slot in ipairs(GearRules.SlotOrder) do
-				local value = raw.Equipped.GearSlots[slot]
-				if type(value) == "string" then
-					profile.Equipped.GearSlots[slot] = value
-				end
-			end
+			profile.Equipped.GearSlots = migrateGearSlots(raw.Equipped.GearSlots)
 		else
 			-- Migration from the original one-gear/skin profile format.
+			profile.Equipped.GearSlots = emptyGearSlots()
 			local legacy = raw.Equipped.Gear
 			if type(legacy) ~= "string" or legacy == "" then
 				legacy = raw.Equipped.Skin
 			end
 			if type(legacy) == "string" and legacy ~= "" then
-				profile.Equipped.GearSlots.Base = legacy
+				local slot = GearRules.NormalizeSlot("Base", legacy)
+				profile.Equipped.GearSlots[slot] = legacy
 			end
 		end
 
@@ -113,20 +144,20 @@ local function normalizeProfile(raw)
 	end
 
 	profile.Owned[Config.DefaultGearId] = true
-	if profile.Equipped.GearSlots.Base == "" or not profile.Owned[profile.Equipped.GearSlots.Base] then
-		profile.Equipped.GearSlots.Base = Config.DefaultGearId
-	end
-	for _, slot in ipairs({"Head", "Face", "Torso", "Back"}) do
+	for _, slot in ipairs(GearRules.SlotOrder) do
 		local itemId = profile.Equipped.GearSlots[slot]
 		if itemId ~= "" and not profile.Owned[itemId] then
 			profile.Equipped.GearSlots[slot] = ""
 		end
 	end
+	if profile.Equipped.GearSlots[Config.DefaultGearSlot] == "" then
+		profile.Equipped.GearSlots[Config.DefaultGearSlot] = Config.DefaultGearId
+	end
 	return profile
 end
 
 local function copyGearSlots(source)
-	local result = defaultGearSlots()
+	local result = emptyGearSlots()
 	for _, slot in ipairs(GearRules.SlotOrder) do
 		local value = source and source[slot]
 		if type(value) == "string" then
@@ -144,13 +175,14 @@ local function publicProfile(profile)
 		end
 	end
 	local slots = copyGearSlots(profile.Equipped.GearSlots)
+	local defaultGear = slots[Config.DefaultGearSlot] or ""
 	return {
 		Cash = profile.Cash,
 		Owned = owned,
 		Equipped = {
 			GearSlots = slots,
-			Gear = slots.Base, -- compatibility alias
-			Skin = slots.Base, -- legacy compatibility alias
+			Gear = defaultGear, -- compatibility alias
+			Skin = defaultGear, -- legacy compatibility alias
 			Primary = profile.Equipped.Primary,
 			Secondary = profile.Equipped.Secondary,
 		},
@@ -159,12 +191,17 @@ end
 
 local function applyPlayerAttributes(player: Player, profile)
 	local slots = profile.Equipped.GearSlots
+	local defaultGear = slots[Config.DefaultGearSlot] or ""
 	player:SetAttribute("VaultCash", profile.Cash)
-	player:SetAttribute("VaultEquippedGear", slots.Base)
-	player:SetAttribute("VaultEquippedSkin", slots.Base)
+	player:SetAttribute("VaultEquippedGear", defaultGear)
+	player:SetAttribute("VaultEquippedSkin", defaultGear)
 	for _, slot in ipairs(GearRules.SlotOrder) do
 		player:SetAttribute("VaultGear" .. slot, slots[slot] or "")
 	end
+	-- Keep old attributes readable during the slot migration.
+	player:SetAttribute("VaultGearHead", slots.Headwear or "")
+	player:SetAttribute("VaultGearFace", slots.FaceMask or "")
+	player:SetAttribute("VaultGearTorso", slots.Vest or "")
 	player:SetAttribute("VaultEquippedPrimary", profile.Equipped.Primary)
 	player:SetAttribute("VaultEquippedSecondary", profile.Equipped.Secondary)
 	player:SetAttribute("VaultGearRevision", (tonumber(player:GetAttribute("VaultGearRevision")) or 0) + 1)
@@ -231,7 +268,7 @@ local function loadProfile(player: Player)
 		task.defer(applyEquippedGear, player, player.Character)
 	end
 
-	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | wardrobe slots ready", player.Name, profile.Cash))
+	print(string.format("[TheVaultProfile] ready for %s | Cash=%d | granular wardrobe slots ready", player.Name, profile.Cash))
 end
 
 local function saveProfile(player: Player)
@@ -333,12 +370,16 @@ equipItem.OnServerInvoke = function(player: Player, itemId)
 		if entry:GetAttribute("Wearable") ~= true then
 			return false, "GEAR_FIT_PENDING", publicProfile(profile)
 		end
-		local slot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+		local slot = GearRules.NormalizeSlot(tostring(entry:GetAttribute("GearSlot") or "Vest"), itemId)
 		if profile.Equipped.GearSlots[slot] == itemId then
-			if slot == "Base" then
-				return true, "BASE_GEAR_REQUIRED", publicProfile(profile)
+			if itemId == Config.DefaultGearId then
+				return true, "DEFAULT_GEAR_REQUIRED", publicProfile(profile)
 			end
-			profile.Equipped.GearSlots[slot] = ""
+			if slot == Config.DefaultGearSlot then
+				profile.Equipped.GearSlots[slot] = Config.DefaultGearId
+			else
+				profile.Equipped.GearSlots[slot] = ""
+			end
 			message = "UNEQUIPPED"
 		else
 			profile.Equipped.GearSlots[slot] = itemId

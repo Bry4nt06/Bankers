@@ -13,19 +13,15 @@ Manifest.Guns = {
 	{assetId = 464785640, itemId = "guns-ksr29", displayName = "KSR-29 Sniper Rifle", subcategory = "SnipersHeavy", price = 3400, creator = "@whyatt"},
 }
 
--- Crew Standard is source-controlled separately and counts as the first Gear item.
--- Imported Creator Store gear is catalog/preview ready but intentionally marked
--- VaultWearable=false until each model is fitted to THE TAKE's attachment template.
+-- Only Creator Store gear that has passed the current visual-quality bar stays
+-- here. Opening-menu character gear is seeded separately from the exact scene
+-- accessories so it matches THE TAKE's established visual language and uses the
+-- same native Roblox attachments as the menu models.
 Manifest.Gear = {
-	{assetId = 4353344617, itemId = "gear-american-tactical-vest", displayName = "American Tactical Vest", price = 900, creator = "@ryan6475h"},
-	{assetId = 8623886809, itemId = "gear-iotv", displayName = "IOTV Carrier", price = 1600, creator = "@pug1003"},
-	{assetId = 71696740279397, itemId = "gear-plate-carrier", displayName = "Tactical Plate Carrier", price = 1500, creator = "@CyberLight6870"},
-	{assetId = 7959512734, itemId = "gear-tactical-helmet", displayName = "Tactical Helmet", price = 850, creator = "@jmackity"},
-	{assetId = 15823732569, itemId = "gear-ir-helmet", displayName = "IR Tactical Helmet", price = 950, creator = "@HC_x1269"},
-	{assetId = 955376292, itemId = "gear-helmet-model", displayName = "Field Helmet", price = 650, creator = "@CastTorras"},
-	{assetId = 18904041627, itemId = "gear-backpack", displayName = "Tactical Backpack", price = 800, creator = "@maurodebrawler"},
-	{assetId = 12198170201, itemId = "gear-mask", displayName = "Tactical Mask", price = 600, creator = "@Abs0lute_S0lver1"},
-	{assetId = 14560919367, itemId = "gear-m50-mask", displayName = "M50 Gas Mask", price = 1100, creator = "@sanyigame1"},
+	{assetId = 71696740279397, itemId = "gear-plate-carrier", displayName = "Tactical Plate Carrier", price = 1500, creator = "@CyberLight6870", gearSlot = "Vest", fitScale = 0.90},
+	{assetId = 7959512734, itemId = "gear-tactical-helmet", displayName = "Tactical Helmet", price = 850, creator = "@jmackity", gearSlot = "Headwear", fitScale = 0.92, fitOffsetY = 0.04},
+	{assetId = 12198170201, itemId = "gear-mask", displayName = "Tactical Mask", price = 600, creator = "@Abs0lute_S0lver1", gearSlot = "FaceMask", fitScale = 0.88},
+	{assetId = 14560919367, itemId = "gear-m50-mask", displayName = "M50 Gas Mask", price = 1100, creator = "@sanyigame1", gearSlot = "FaceMask", fitScale = 0.86},
 }
 
 Manifest.Emotes = {

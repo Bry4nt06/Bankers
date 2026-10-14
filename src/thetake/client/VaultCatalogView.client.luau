@@ -4,6 +4,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local theTake = ReplicatedStorage:WaitForChild("TheTake")
+local shared = theTake:WaitForChild("Shared")
+local GearRules = require(shared:WaitForChild("VaultGearRules"))
+local Config = require(shared:WaitForChild("VaultEconomyConfig"))
 local index = theTake:WaitForChild("VaultStoreIndex")
 local previewRoot = theTake:WaitForChild("VaultPreviewModels")
 local remotes = theTake:WaitForChild("VaultRemotes")
@@ -20,15 +23,38 @@ local CATEGORY_MAP = {
 	loadouts = "Wardrobe",
 }
 
+local GEAR_FILTERS = {
+	{slot = "All", label = "ALL"},
+	{slot = "Headwear", label = "HEAD"},
+	{slot = "Eyewear", label = "EYES"},
+	{slot = "FaceMask", label = "MASKS"},
+	{slot = "Vest", label = "VESTS"},
+	{slot = "Back", label = "PACKS"},
+	{slot = "Waist", label = "WAIST"},
+	{slot = "Hands", label = "GLOVES"},
+	{slot = "Base", label = "OUTFITS"},
+}
+
 local currentCategory = "Guns"
+local currentGearFilter = "All"
 local listFrame: ScrollingFrame? = nil
+local gearFilterFrame: ScrollingFrame? = nil
 local emptyState: TextLabel? = nil
 local cashLabel: TextLabel? = nil
+
+local function emptyGearSlots()
+	local slots = {}
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		slots[slot] = ""
+	end
+	return slots
+end
+
 local profile = {
 	Cash = 0,
 	Owned = {},
 	Equipped = {
-		GearSlots = {Base = "", Head = "", Face = "", Torso = "", Back = ""},
+		GearSlots = emptyGearSlots(),
 		Primary = "",
 		Secondary = "",
 	},
@@ -51,6 +77,33 @@ local function findEmptyState(panel: Instance): TextLabel?
 	return nil
 end
 
+local function migrateClientSlots(incoming)
+	local slots = emptyGearSlots()
+	if type(incoming) ~= "table" then
+		return slots
+	end
+
+	local function apply(rawSlot: string)
+		local value = incoming[rawSlot]
+		if type(value) ~= "string" or value == "" then
+			return
+		end
+		local normalized = GearRules.NormalizeSlot(rawSlot, value)
+		if value == Config.DefaultGearId and slots[normalized] ~= "" then
+			return
+		end
+		slots[normalized] = value
+	end
+
+	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
+		apply(slot)
+	end
+	for _, slot in ipairs(GearRules.SlotOrder) do
+		apply(slot)
+	end
+	return slots
+end
+
 local function normalizeProfile(result)
 	if type(result) ~= "table" then
 		return
@@ -58,15 +111,15 @@ local function normalizeProfile(result)
 	profile = result
 	profile.Owned = type(profile.Owned) == "table" and profile.Owned or {}
 	profile.Equipped = type(profile.Equipped) == "table" and profile.Equipped or {}
-	profile.Equipped.GearSlots = type(profile.Equipped.GearSlots) == "table" and profile.Equipped.GearSlots or {
-		Base = type(profile.Equipped.Gear) == "string" and profile.Equipped.Gear or "",
-		Head = "",
-		Face = "",
-		Torso = "",
-		Back = "",
-	}
-	for _, slot in ipairs({"Base", "Head", "Face", "Torso", "Back"}) do
-		profile.Equipped.GearSlots[slot] = type(profile.Equipped.GearSlots[slot]) == "string" and profile.Equipped.GearSlots[slot] or ""
+	if type(profile.Equipped.GearSlots) == "table" then
+		profile.Equipped.GearSlots = migrateClientSlots(profile.Equipped.GearSlots)
+	else
+		local slots = emptyGearSlots()
+		local legacy = type(profile.Equipped.Gear) == "string" and profile.Equipped.Gear or ""
+		if legacy ~= "" then
+			slots[GearRules.NormalizeSlot("Base", legacy)] = legacy
+		end
+		profile.Equipped.GearSlots = slots
 	end
 	profile.Equipped.Primary = type(profile.Equipped.Primary) == "string" and profile.Equipped.Primary or ""
 	profile.Equipped.Secondary = type(profile.Equipped.Secondary) == "string" and profile.Equipped.Secondary or ""
@@ -121,8 +174,6 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	viewport.LightColor = Color3.fromRGB(255, 213, 154)
 	viewport.LightDirection = Vector3.new(-1, -1, -1)
 
-	-- Creator Store imports intentionally use Roblox thumbnails. Their raw child meshes
-	-- can reference content that is not authorized for this experience.
 	if tonumber(entry:GetAttribute("CreatorStoreAssetId")) and tonumber(entry:GetAttribute("CreatorStoreAssetId")) > 0 then
 		if addThumbnail(viewport, entry) then
 			return
@@ -185,8 +236,12 @@ local function buildViewport(viewport: ViewportFrame, entry: Folder)
 	viewport.CurrentCamera = previewCamera
 end
 
+local function entrySlot(entry: Folder, itemId: string): string
+	return GearRules.NormalizeSlot(tostring(entry:GetAttribute("GearSlot") or "Vest"), itemId)
+end
+
 local function isGearEquipped(entry: Folder, itemId: string): boolean
-	local slot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+	local slot = entrySlot(entry, itemId)
 	return profile.Equipped.GearSlots[slot] == itemId
 end
 
@@ -208,15 +263,23 @@ local function collectEntries()
 					table.insert(entries, entry)
 				end
 			elseif entry:GetAttribute("Category") == currentCategory then
-				table.insert(entries, entry)
+				if currentCategory ~= "Gear" or currentGearFilter == "All" or entrySlot(entry, itemId) == currentGearFilter then
+					table.insert(entries, entry)
+				end
 			end
 		end
 	end
 	table.sort(entries, function(a, b)
-		local slotA = tostring(a:GetAttribute("GearSlot") or "")
-		local slotB = tostring(b:GetAttribute("GearSlot") or "")
-		if currentCategory == "Wardrobe" and slotA ~= slotB then
-			return slotA < slotB
+		if currentCategory == "Wardrobe" or currentCategory == "Gear" then
+			local itemA = tostring(a:GetAttribute("ItemId") or a.Name)
+			local itemB = tostring(b:GetAttribute("ItemId") or b.Name)
+			local slotA = entrySlot(a, itemA)
+			local slotB = entrySlot(b, itemB)
+			local rankA = GearRules.SlotRank(slotA)
+			local rankB = GearRules.SlotRank(slotB)
+			if rankA ~= rankB then
+				return rankA < rankB
+			end
 		end
 		return tostring(a:GetAttribute("DisplayName")):lower() < tostring(b:GetAttribute("DisplayName")):lower()
 	end)
@@ -233,11 +296,74 @@ local function callEquip(itemId: string)
 	return callOk and success == true, message
 end
 
+local function addWardrobeHeader(slot: string, layoutOrder: number)
+	if not listFrame then
+		return
+	end
+	local header = Instance.new("Frame")
+	header.Name = "Category_" .. slot
+	header.Size = UDim2.new(1, -8, 0, 34)
+	header.BackgroundTransparency = 1
+	header.LayoutOrder = layoutOrder
+	header.Parent = listFrame
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -8, 1, 0)
+	label.Position = UDim2.fromOffset(4, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.Text = GearRules.SlotLabel(slot)
+	label.TextColor3 = Color3.fromRGB(236, 179, 78)
+	label.TextSize = 12
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = header
+
+	local line = Instance.new("Frame")
+	line.AnchorPoint = Vector2.new(0, 1)
+	line.Position = UDim2.new(0, 4, 1, -2)
+	line.Size = UDim2.new(1, -8, 0, 1)
+	line.BorderSizePixel = 0
+	line.BackgroundColor3 = Color3.fromRGB(77, 210, 218)
+	line.BackgroundTransparency = 0.62
+	line.Parent = header
+end
+
+local function updateGearFilterButtons()
+	if not gearFilterFrame then
+		return
+	end
+	for _, child in ipairs(gearFilterFrame:GetChildren()) do
+		if child:IsA("TextButton") then
+			local active = child.Name == "GearFilter_" .. currentGearFilter
+			child.BackgroundColor3 = active and Color3.fromRGB(108, 24, 60) or Color3.fromRGB(24, 54, 82)
+			child.TextColor3 = active and Color3.fromRGB(245, 245, 245) or Color3.fromRGB(157, 178, 194)
+		end
+	end
+end
+
+local function updateCategoryLayout()
+	local showGearFilters = currentCategory == "Gear"
+	if gearFilterFrame then
+		gearFilterFrame.Visible = showGearFilters
+	end
+	if listFrame then
+		if showGearFilters then
+			listFrame.Position = UDim2.fromOffset(24, 176)
+			listFrame.Size = UDim2.new(1, -48, 1, -200)
+		else
+			listFrame.Position = UDim2.fromOffset(24, 140)
+			listFrame.Size = UDim2.new(1, -48, 1, -164)
+		end
+	end
+	updateGearFilterButtons()
+end
+
 local refresh
 refresh = function()
 	if not listFrame or not emptyState then
 		return
 	end
+	updateCategoryLayout()
 	clearRows()
 	updateCash()
 
@@ -247,7 +373,7 @@ refresh = function()
 		if currentCategory == "Wardrobe" then
 			emptyState.Text = "NO OWNED GEAR YET\nBuy Gear first, then dress your avatar here."
 		elseif currentCategory == "Gear" then
-			emptyState.Text = "NO GEAR REGISTERED"
+			emptyState.Text = currentGearFilter == "All" and "NO GEAR REGISTERED" or ("NO " .. string.upper(GearRules.SlotLabel(currentGearFilter)) .. " REGISTERED")
 		else
 			emptyState.Text = "NO ITEMS REGISTERED\nAdd approved assets to ServerStorage.TheTakeVaultCatalog."
 		end
@@ -258,19 +384,29 @@ refresh = function()
 	emptyState.Visible = false
 	listFrame.Visible = true
 
+	local layoutOrder = 0
+	local lastWardrobeSlot = ""
 	for _, entry in ipairs(entries) do
 		local itemId = tostring(entry:GetAttribute("ItemId") or entry.Name)
 		local category = tostring(entry:GetAttribute("Category") or "")
 		local wearable = entry:GetAttribute("Wearable") == true
-		local gearSlot = tostring(entry:GetAttribute("GearSlot") or "Torso")
+		local gearSlot = category == "Gear" and entrySlot(entry, itemId) or ""
 		local fitStatus = tostring(entry:GetAttribute("FitStatus") or "")
 
+		if currentCategory == "Wardrobe" and gearSlot ~= lastWardrobeSlot then
+			layoutOrder += 1
+			addWardrobeHeader(gearSlot, layoutOrder)
+			lastWardrobeSlot = gearSlot
+		end
+
+		layoutOrder += 1
 		local row = Instance.new("Frame")
 		row.Name = itemId
 		row.Size = UDim2.new(1, -8, 0, 106)
 		row.BackgroundColor3 = Color3.fromRGB(24, 54, 82)
 		row.BackgroundTransparency = 0.10
 		row.BorderSizePixel = 0
+		row.LayoutOrder = layoutOrder
 		row.Parent = listFrame
 
 		local viewport = Instance.new("ViewportFrame")
@@ -296,9 +432,9 @@ refresh = function()
 		detail.BackgroundTransparency = 1
 		detail.Font = Enum.Font.Gotham
 		if currentCategory == "Wardrobe" then
-			detail.Text = string.upper(gearSlot) .. " SLOT • " .. (fitStatus ~= "" and string.upper(fitStatus) or "READY")
+			detail.Text = GearRules.SlotLabel(gearSlot) .. " • " .. (fitStatus ~= "" and string.upper(fitStatus) or "READY")
 		elseif category == "Gear" then
-			detail.Text = string.upper(gearSlot) .. " • " .. (wearable and (fitStatus == "AutoFit" and "AUTO FIT" or "WEARABLE") or "FIT PENDING")
+			detail.Text = GearRules.SlotLabel(gearSlot) .. " • " .. (wearable and (fitStatus == "AutoFit" and "AUTO FIT" or "WEARABLE") or "FIT PENDING")
 		else
 			local subcategory = tostring(entry:GetAttribute("Subcategory") or "")
 			detail.Text = subcategory ~= "" and subcategory or "VAULT ITEM"
@@ -346,8 +482,8 @@ refresh = function()
 				action.Text = "FIT PENDING"
 				action.Active = false
 			elseif isGearEquipped(entry, itemId) then
-				if gearSlot == "Base" then
-					action.Text = "BASE WORN"
+				if itemId == Config.DefaultGearId then
+					action.Text = "DEFAULT WORN"
 					action.Active = false
 				else
 					action.Text = "REMOVE"
@@ -404,7 +540,6 @@ refresh = function()
 					if callOk and type(result) == "table" then
 						normalizeProfile(result)
 					end
-					-- Guns preserve the quick buy-and-equip flow. Gear is dressed only in LOADOUTS.
 					if callOk and success == true and message == "PURCHASED" and category == "Guns" then
 						callEquip(itemId)
 					end
@@ -433,6 +568,47 @@ local function attach(panel: Frame)
 	cashLabel.TextXAlignment = Enum.TextXAlignment.Right
 	cashLabel.ZIndex = 34
 	cashLabel.Parent = contentFrame
+
+	gearFilterFrame = Instance.new("ScrollingFrame")
+	gearFilterFrame.Name = "VaultGearFilters"
+	gearFilterFrame.Position = UDim2.fromOffset(24, 130)
+	gearFilterFrame.Size = UDim2.new(1, -48, 0, 36)
+	gearFilterFrame.BackgroundTransparency = 1
+	gearFilterFrame.BorderSizePixel = 0
+	gearFilterFrame.ScrollBarThickness = 0
+	gearFilterFrame.AutomaticCanvasSize = Enum.AutomaticSize.X
+	gearFilterFrame.CanvasSize = UDim2.new()
+	gearFilterFrame.ScrollingDirection = Enum.ScrollingDirection.X
+	gearFilterFrame.Visible = false
+	gearFilterFrame.ZIndex = 35
+	gearFilterFrame.Parent = contentFrame
+
+	local filterLayout = Instance.new("UIListLayout")
+	filterLayout.FillDirection = Enum.FillDirection.Horizontal
+	filterLayout.Padding = UDim.new(0, 6)
+	filterLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	filterLayout.Parent = gearFilterFrame
+
+	for order, filter in ipairs(GEAR_FILTERS) do
+		local button = Instance.new("TextButton")
+		button.Name = "GearFilter_" .. filter.slot
+		button.LayoutOrder = order
+		button.Size = UDim2.fromOffset(filter.slot == "All" and 44 or 64, 30)
+		button.BackgroundColor3 = Color3.fromRGB(24, 54, 82)
+		button.BackgroundTransparency = 0.04
+		button.BorderSizePixel = 0
+		button.AutoButtonColor = true
+		button.Font = Enum.Font.GothamBold
+		button.Text = filter.label
+		button.TextColor3 = Color3.fromRGB(157, 178, 194)
+		button.TextSize = 10
+		button.ZIndex = 36
+		button.Parent = gearFilterFrame
+		button.Activated:Connect(function()
+			currentGearFilter = filter.slot
+			refresh()
+		end)
+	end
 
 	listFrame = Instance.new("ScrollingFrame")
 	listFrame.Name = "VaultCatalogItems"
@@ -494,4 +670,4 @@ profileChanged.OnClientEvent:Connect(function(newProfile)
 	end
 end)
 
-print("[TheVaultCatalog] store + LOADOUT wardrobe UI ready")
+print("[TheVaultCatalog] categorized Gear store + LOADOUT wardrobe UI ready")
